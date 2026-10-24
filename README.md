@@ -10,6 +10,17 @@ hold ⌥⇧B  →  "in the strado project, add a todo: rotate the API keys"  →
 
 ## What's in the box
 
+- **One conversation that remembers (0.9).**
+  - **⌥⇧B** on the Mac or the **Talk** tab on the iPhone: the same conversation on both, kept as plain files (`conversations/<month>/<day>.<device>.jsonl`). Share screenshots, photos, PDFs and links; they're kept in the project's `resources/`.
+  - Broski recalls your notes, older conversation and each project's standing decisions, and cites them ("on Oct 21 you decided…"). A newer decision replaces an older one instead of mixing with it.
+  - Decisions, todos and bugs come back as a **save card**: nothing is saved until you tap Save, or say "note: …".
+  - "**Go private**" starts a blank slate that reads and keeps nothing; when you leave, keep it or let it go.
+  - **It learns.** When the Mac is idle, reflection rereads what *you* said (never its own replies, files or local-only projects) and updates what it knows about you. Every change is logged with why and can be undone (What Broski knows › Reflection).
+  - **New projects by talking.** Describe something new and Broski proposes a project: one tap sets up its folder, a tracker with the packs that fit (web, web3, ai, mobile, personal, or your own: "new pack: game dev"), a first note, and setup drafts (`CLAUDE.md`, prompts, agents). "Connect ~/code/x" ties a repo to a project, read-only.
+  - **Command center** per project in the dashboard: its packs' widgets, filled from your notes, decisions and tracker sections.
+  - **Any model, by role** (Settings › Models): fast, everyday and deep each on Claude, any OpenAI-compatible server (Ollama, LM Studio, OpenRouter…), or Apple's on-device model; local-only projects use only models on the device. A daily limit and spend by model are there too.
+  - **Automations** (Settings › Connections): when a project changes in a way you name, a notification, a webhook post, or both.
+  - Someone new gets a first conversation that gets to know them, and a card to pick a model when there isn't one.
 - **Capture anything, anywhere.**
   - **How to start:** **⌥⇧B** opens the conversation (hold **fn** to talk into it), **⌥⇧N** for a quick note (hold it to talk), **⌥⇧S** for a screenshot note, Broski in the menu bar, or opt in to **holding fn** to talk anywhere, the wake word "broski", or a floating Broski head.
   - **What goes in:** talk, type, drop files, paste images, or grab screenshots. Each note also keeps what you were looking at: the app, the window title, the browser URL, and any selected text.
@@ -35,7 +46,7 @@ hold ⌥⇧B  →  "in the strado project, add a todo: rotate the API keys"  →
   - Nudges when you come back to a project with open work, or when an idea has sat for weeks. Pick the dial (quiet, daily, active); there's a daily budget, and every nudge has Useful / Not now / Never.
   - An opt-in morning check-in, at a time you choose, covering what you choose.
   - **Help with this** (⌥⇧H): Broski looks at the window you're in, alongside your project's memory, and helps. For example, it explains an error or reviews a screen you're testing.
-  - **Riff mode:** think out loud with Claude about a project, by voice or typing. Wrap it up into a note with ideas, decisions and todos. On the iPhone too: Ask › Riff, or "Riff with Broski" from Siri or the Action Button (it opens listening, and can read replies aloud). The riff is kept until you start a new one.
+  - **Riff mode:** think out loud with Claude about a project, by voice or typing. Wrap it up into a note with ideas, decisions and todos. On the iPhone too: Talk › ⋯ › Riff, or "Riff with Broski" from Siri or the Action Button (it opens listening, and can read replies aloud). The riff is kept until you start a new one.
   - **Call notes:** your mic and the call's audio, transcribed locally as "Me" and "Them", then summarized with decisions and action items.
   - Related notes show while you write, and a near-duplicate offers "add to it instead".
 - **Your notes in Claude Code.** Settings › AI › Connect adds Broski's read-only MCP server (`Broski --mcp`), so Claude Code can list projects, query trackers, ask what's waiting on you, read the journal of what changed, search notes and check onboarding answers.
@@ -166,6 +177,8 @@ A project with no tracker gets **Create a Broski tracker**: plain markdown (`TRA
 - **Mic:** off except while you dictate a note, unless you turn on the wake word.
 - **Wake word:** runs only with on-device recognition (`requiresOnDeviceRecognition`). If your language can't do that, it refuses to start rather than streaming your room to a server.
 - **What's kept:** nothing is uploaded and there are no analytics. Notes are local markdown files.
+- **What goes to a model:** only the conversation you're in, with what it recalls, through one gateway that masks keys and tokens first. Projects marked local only go only to models on the device, and reflection reads only your own words, fenced as data, and never turns instructions into memories.
+- **Automations** can notify you about a local-only project but never post it anywhere; webhook addresses stay in the Mac's secrets file.
 
 ## Layout
 

@@ -1,6 +1,6 @@
 # Broski beta
 
-Broski is a little Mac sidekick for ideas that show up at random. Click the floating Broski head, or press **⌥⇧B**, then say or type the idea. It gets filed into the right project's notes before you forget it.
+Broski is a companion you talk to about your projects, on the Mac and the iPhone. Press **⌥⇧B** and talk or type: it remembers what you've told it, thinks with you, and offers to save the decisions and todos that come up. Quick notes are still one key away (**⌥⇧N**).
 
 ## Install
 
@@ -16,7 +16,9 @@ Broski needs macOS 13 or later.
 
 ## First run
 
-A short welcome walks you through setup:
+Your first conversation opens with Broski asking what to call you, what you're working on and how you like answers; after your third answer it remembers what you said (you can see and undo it under **What Broski knows**). With no model yet, a card offers a Claude key, a model on your Mac (Ollama, LM Studio), or Apple's on-device model.
+
+A short welcome also walks you through setup:
 
 - **How to call Broski:** the menu bar icon, the keyboard shortcut, holding fn, and an optional wake word. (The floating head and the pill are off; the menu bar menu turns them on.)
 - **Voice:** allow the microphone and speech recognition, then use **Test my voice**. Voice is optional; you can type every note instead.
@@ -27,6 +29,10 @@ A short welcome walks you through setup:
 ## Using it
 
 - **Talk to Broski:** press **⌥⇧B**, or hold **fn** and talk. It remembers your projects, and when you decide something or name a task it offers a card: tap **Save** to file it, or **Not now**. Say "go private" for a conversation that keeps nothing, and "think harder" for the deep model.
+- **What Broski knows:** the menu bar › **What Broski knows**: about you, every project's decisions, and what reflection changed (each with **Undo**).
+- **New project:** describe it in the conversation; Broski proposes one with packs that fit. **Create project** sets up its folder, tracker and setup drafts. "connect ~/code/x" ties a repo to the current project; "new pack: game dev" drafts your own pack.
+- **Models and spending:** Settings › **Models**: a model per role, local servers, Apple's on-device model, today's and this month's spend, a daily limit.
+- **Automations:** Settings › Connections › **Automations**: a notification or a webhook post when a project changes the way you name.
 - **Start a note:** press **⌥⇧N**, or type "note: …" in the conversation. The note opens ready for typing, and the mic stays off. (Prefer the old way? Menu bar › uncheck **Shortcut opens the conversation**, and ⌥⇧B opens notes again.)
 - **Hold fn to talk** (Settings › General): hold the fn (🌐) key anywhere, talk, let go. It needs Accessibility. If the emoji picker or Dictation opens when you let go, set System Settings › Keyboard › "Press 🌐 key to" to Do Nothing.
 - **Talk into a note:** hold **⌥⇧N** or the Broski head and let go when you're done, or click 🎙 and talk as long as you need. Pausing to think doesn't stop it; click **Done talking** or press ⌘⏎ when you're finished.
