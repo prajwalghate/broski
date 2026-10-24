@@ -386,7 +386,9 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         helpHotKey = HotKey(spec: config.helpHotkey) { [weak self] in self?.companion.helpWithThis() }
         helpLabel = helpHotKey?.display ?? HotKey.parse(config.helpHotkey)?.display ?? config.helpHotkey
         capture.setShortcutLabels(note: shortcutLabel, screenshot: screenshotLabel, clip: clipLabel)
-        Log.info("Shortcuts: note \(hotKey == nil ? "unavailable" : shortcutLabel), screenshot \(screenshotHotKey == nil ? "unavailable" : screenshotLabel), clip \(clipHotKey == nil ? "unavailable" : clipLabel)")
+        let main = config.conversationFirst ? "talk" : "note"
+        let quick = config.conversationFirst ? ", note \(noteHotKey == nil ? "unavailable" : HotKey.parse(config.noteHotkey)?.display ?? config.noteHotkey)" : ""
+        Log.info("Shortcuts: \(main) \(hotKey == nil ? "unavailable" : shortcutLabel)\(quick), screenshot \(screenshotHotKey == nil ? "unavailable" : screenshotLabel), clip \(clipHotKey == nil ? "unavailable" : clipLabel)")
         onStatusChange?()
     }
 

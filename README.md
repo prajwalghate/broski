@@ -1,6 +1,6 @@
 # Broski
 
-A Mac sidekick for ideas that show up at random. Click the floating Broski head (or press **⌥⇧B**) and type, hold it and talk, or highlight text anywhere and press **⌥⇧C**. You check the note, press ⌘⏎, and it's filed into the right project before it evaporates. A dashboard shows every project and its notes; the notes themselves are plain markdown you own.
+A companion you talk to about your projects. Press **⌥⇧B** (or hold **fn**) and talk or type: Broski remembers what you've told it, thinks with you, and offers to save the decisions, todos and bugs you mention, saving only when you tap Save. **⌥⇧N** still takes a quick note without a reply, and **⌥⇧C** clips highlighted text. A dashboard shows every project and its notes; everything is plain files you own, and any model can run it: Claude, an OpenAI-compatible API, a local model or Apple's on-device one.
 
 ```
 hold ⌥⇧B  →  "in the strado project, add a todo: rotate the API keys"  →  let go
@@ -11,7 +11,7 @@ hold ⌥⇧B  →  "in the strado project, add a todo: rotate the API keys"  →
 ## What's in the box
 
 - **Capture anything, anywhere.**
-  - **How to start:** **⌥⇧B** for a note (hold it to talk), **⌥⇧S** for a screenshot note, Broski in the menu bar, or opt in to **holding fn** to talk anywhere, the wake word "broski", or a floating Broski head.
+  - **How to start:** **⌥⇧B** opens the conversation (hold **fn** to talk into it), **⌥⇧N** for a quick note (hold it to talk), **⌥⇧S** for a screenshot note, Broski in the menu bar, or opt in to **holding fn** to talk anywhere, the wake word "broski", or a floating Broski head.
   - **What goes in:** talk, type, drop files, paste images, or grab screenshots. Each note also keeps what you were looking at: the app, the window title, the browser URL, and any selected text.
 - **Never in your way.**
   - **The mic is off until you ask.** A tap or click opens the note ready for typing. **Hold** ⌥⇧B or the head to talk and let go when you're done, or click 🎙 and talk as long as you like.

@@ -26,9 +26,10 @@ A short welcome walks you through setup:
 
 ## Using it
 
-- **Start a note:** tap **⌥⇧B**, or click Broski in the menu bar. The note opens ready for typing, and the mic stays off.
+- **Talk to Broski:** press **⌥⇧B**, or hold **fn** and talk. It remembers your projects, and when you decide something or name a task it offers a card: tap **Save** to file it, or **Not now**. Say "go private" for a conversation that keeps nothing, and "think harder" for the deep model.
+- **Start a note:** press **⌥⇧N**, or type "note: …" in the conversation. The note opens ready for typing, and the mic stays off. (Prefer the old way? Menu bar › uncheck **Shortcut opens the conversation**, and ⌥⇧B opens notes again.)
 - **Hold fn to talk** (Settings › General): hold the fn (🌐) key anywhere, talk, let go. It needs Accessibility. If the emoji picker or Dictation opens when you let go, set System Settings › Keyboard › "Press 🌐 key to" to Do Nothing.
-- **Talk:** hold **⌥⇧B** or the Broski head and let go when you're done, or click 🎙 and talk as long as you need. Pausing to think doesn't stop it; click **Done talking** or press ⌘⏎ when you're finished.
+- **Talk into a note:** hold **⌥⇧N** or the Broski head and let go when you're done, or click 🎙 and talk as long as you need. Pausing to think doesn't stop it; click **Done talking** or press ⌘⏎ when you're finished.
 - **Check, then save:** you see the text and where it's going. Edit it, add screenshots (**⌥⇧S**), then press ⌘⏎. Return just starts a new line; nothing saves by itself.
 - **Esc keeps a draft.** Open a new note and it's back; **Discard draft** starts fresh.
 - **Clip text:** highlight something in any app and press **⌥⇧C** (or right-click › Services › Add to Broski). Press it on more highlights to collect them into one note. Some apps need Accessibility access for ⌥⇧C; Services works without it.
