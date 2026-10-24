@@ -774,6 +774,7 @@ private struct ConnectionSettings: View {
             } footer: {
                 Text("With a webhook, “Post to Slack” sends straight to that channel. Without one, Broski copies the text and opens Slack.")
             }
+            AutomationSettings(app: app)
             Section("GitHub, Linear, Notion") {
                 Text("“GitHub issue” opens a new issue on the project's repo, found from its git remote, with the note filled in and the screenshot on your clipboard. “Linear issue” does the same in Linear. “Notion” copies Markdown that pastes into a page with formatting.")
                     .font(.system(size: 12))
@@ -892,5 +893,142 @@ private struct CompanionSettings: View {
 
     private func option(_ keyPath: WritableKeyPath<CheckIn.Options, Bool>) -> Binding<Bool> {
         Binding(get: { app.config.checkInOptions[keyPath: keyPath] }, set: { value in app.update { $0.checkInOptions[keyPath: keyPath] = value } })
+    }
+}
+
+// MARK: Automations
+
+/// Rules over what changes in your projects: a notification, a webhook post, or both. Kept in automations.json in
+/// the Broski folder; webhook addresses stay in this Mac's secrets file.
+private struct AutomationSettings: View {
+    @ObservedObject var app: AppModel
+    @State private var rules: [AutomationRule] = []
+    @State private var adding = false
+    @State private var name = ""
+    @State private var project = ""
+    @State private var kind = "decided"
+    @State private var words = ""
+    @State private var notify = true
+    @State private var webhook = ""
+    @State private var hookName = ""
+    @State private var hookURL = ""
+    @State private var problem: String?
+
+    private var webhooks: [String] {
+        (Secrets.get(Secrets.slackWebhook) == nil ? [] : ["slack"]) + Secrets.names(withPrefix: "webhook.")
+    }
+
+    var body: some View {
+        Section {
+            if rules.isEmpty && !adding {
+                Text("None yet. For example: tell me when a strado decision mentions risk, and post it to the team's Slack.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            ForEach(rules) { rule in
+                LabeledContent {
+                    HStack {
+                        Toggle("", isOn: Binding(get: { rule.enabled }, set: { on in change { $0[index(rule)].enabled = on } }))
+                            .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                        Button("Remove", role: .destructive) { change { $0.removeAll { $0.id == rule.id } } }
+                    }
+                } label: {
+                    Text(rule.name)
+                    Text(summary(rule))
+                }
+            }
+            if adding { form } else { Button("Add an automation…") { adding = true } }
+            if let problem { Text(problem).font(.system(size: 12)).foregroundStyle(.orange) }
+        } header: {
+            Text("Automations")
+        } footer: {
+            Text("Checked once a minute. Changes in local-only projects can notify you but are never posted anywhere.")
+        }
+        .onAppear { rules = Automations.load(root: app.root) }
+    }
+
+    @ViewBuilder private var form: some View {
+        TextField("Name", text: $name, prompt: Text("Risk decisions"))
+        Picker("Project", selection: $project) {
+            Text("Any").tag("")
+            ForEach(app.library.projectNames, id: \.self) { Text($0).tag($0) }
+        }
+        Picker("When", selection: $kind) {
+            Text("Anything changes").tag("")
+            ForEach(Automations.kinds, id: \.self) { Text(Self.label($0)).tag($0) }
+        }
+        TextField("Title has any of", text: $words, prompt: Text("risk, limit (optional)"))
+        Toggle("Notify me", isOn: $notify)
+        Picker("Post to", selection: $webhook) {
+            Text("Nowhere").tag("")
+            ForEach(webhooks, id: \.self) { Text($0).tag($0) }
+            Text("A new webhook…").tag("+")
+        }
+        if webhook == "+" {
+            TextField("Webhook name", text: $hookName, prompt: Text("team"))
+            SecureField("https://…", text: $hookURL)
+        }
+        HStack {
+            Spacer()
+            Button("Cancel") { adding = false }
+            Button("Add") { add() }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || (!notify && webhook.isEmpty))
+        }
+    }
+
+    private func add() {
+        var hook = webhook.isEmpty ? nil : webhook
+        if webhook == "+" {
+            let slug = hookName.lowercased().split { !$0.isLetter && !$0.isNumber }.joined(separator: "-")
+            guard !slug.isEmpty, let url = URL(string: hookURL.trimmingCharacters(in: .whitespaces)), url.scheme == "https" else {
+                return problem = "A webhook needs a name and an https:// address."
+            }
+            Secrets.set(url.absoluteString, for: "webhook.\(slug)")
+            hook = slug
+        }
+        let rule = AutomationRule(name: name.trimmingCharacters(in: .whitespaces), projects: project.isEmpty ? [] : [project],
+                                  kinds: kind.isEmpty ? [] : [kind],
+                                  words: words.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
+                                  notify: notify, webhook: hook)
+        change { $0.append(rule) }
+        if notify { Automator.askToNotify() }
+        adding = false
+        (name, words, webhook, hookName, hookURL, problem) = ("", "", "", "", "", nil)
+    }
+
+    private func index(_ rule: AutomationRule) -> Int { rules.firstIndex { $0.id == rule.id } ?? 0 }
+
+    private func change(_ edit: (inout [AutomationRule]) -> Void) {
+        var new = rules
+        edit(&new)
+        do {
+            try Automations.save(new, root: app.root)
+            rules = new
+            problem = nil
+        } catch {
+            problem = "Couldn't save automations: \(error.localizedDescription)"
+        }
+    }
+
+    private func summary(_ rule: AutomationRule) -> String {
+        let scope = rule.projects.first ?? "Any project"
+        let when = rule.kinds.first.map(Self.label) ?? "anything changes"
+        let has = rule.words.isEmpty ? "" : " with “\(rule.words.joined(separator: "”, “"))”"
+        let then = [rule.notify ? "notify" : nil, rule.webhook.map { "post to \($0)" }].compactMap { $0 }.joined(separator: " and ")
+        return "\(scope) · \(when)\(has) → \(then)"
+    }
+
+    static func label(_ kind: String) -> String {
+        switch kind {
+        case "decided": return "A decision is saved"
+        case "new": return "Something new appears"
+        case "closed": return "Something is closed"
+        case "reopened": return "Something reopens"
+        case "status": return "A status changes"
+        case "attested": return "A step is attested"
+        case "removed": return "Something is removed"
+        case "added": return "A file is shared"
+        default: return kind
+        }
     }
 }

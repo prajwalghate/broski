@@ -39,6 +39,13 @@ enum Secrets {
         return true
     }
 
+    /// The saved names starting with `prefix`, without it ("webhook." → ["team", "alerts"]).
+    static func names(withPrefix prefix: String) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return load().keys.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }.sorted()
+    }
+
     private static func load() -> [String: String] {
         if let cache { return cache }
         var all = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]

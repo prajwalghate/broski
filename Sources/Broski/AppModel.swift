@@ -274,6 +274,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         if config.showFloatingButton { makeBubble().setVisible(true) }
         applyFnKey()
         reflector.start()
+        automator.start()
         if config.wakeWordEnabled { capture.setWakeListening(true) }
         if UserDefaults.standard.integer(forKey: Self.onboardingKey) < Self.onboardingVersion {
             showOnboarding()
@@ -532,6 +533,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             id == "claude" ? Secrets.get(Secrets.claudeKey) : Secrets.get("model.\(id)")
         }
     }
+
+    private(set) lazy var automator = Automator(root: root) { [weak self] in self?.config ?? .defaults }
 
     private(set) lazy var reflector: Reflector = {
         let reflector = Reflector(root: root, library: library, config: { [weak self] in self?.config ?? .defaults },
