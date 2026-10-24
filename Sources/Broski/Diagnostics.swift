@@ -79,6 +79,7 @@ enum Diagnostics {
         if let i = args.firstIndex(of: "--transcribe") { return runTranscribe(Array(args[(i + 1)...]), note: note) }
         if let i = args.firstIndex(of: "--converse"), i + 1 < args.count { return runConverse(args[i + 1], note: note) }
         if args.contains("--reflect") { return runReflect(note: note) }
+        if args.contains("--first-run") { return runFirstRun(note: note) }
         if args.contains("--brain") { return runBrain(note: note) }
         if let i = args.firstIndex(of: "--ask") { return runAsk(Array(args.dropFirst(i + 1)), note: note) }
         if let i = args.firstIndex(of: "--companion"), i + 1 < args.count { return runCompanion(helper: args[i + 1], note: note) }
@@ -215,6 +216,44 @@ enum Diagnostics {
                 note("left to read on the next run: \(again)")
                 let spent = UsageLog.entries(root: root)
                 note(String(format: "logged %d calls via %@, $%.5f", spent.count, spent.first?.model ?? "?", spent.reduce(0) { $0 + $1.usd }))
+            } catch {
+                note("failed: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: root)
+            note("done")
+            done.signal()
+        }
+        while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
+    /// `--first-run`: a new user's first conversation with your key, in a throwaway folder: the greeting, three
+    /// scripted answers with Broski's real replies, then the reflection that remembers what they said.
+    static func runFirstRun(note: @escaping (String) -> Void) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-first-\(UUID().uuidString)", isDirectory: true)
+        let gateway = ModelGateway(settings: .defaults, root: root, device: "mac") { id in id == "claude" ? Secrets.get(Secrets.claudeKey) : nil }
+        let store = ConversationStore(root: root, device: "mac")
+        let answers = ["Call me Sam. I'm a solo developer in Pune.",
+                       "I'm building a habit tracker for runners, an iPhone app, and I keep a small open-source CLI going on weekends.",
+                       "Keep it short and blunt. I mostly talk to you on my phone while walking."]
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            do {
+                var turns = [FirstRun.greetingTurn(device: "mac")]
+                note("greeting: \(turns[0].text)")
+                for answer in answers {
+                    turns.append(Turn(device: "mac", speaker: .you, text: answer))
+                    let request = ConversationContext.build(aboutYou: nil, page: nil, project: nil, turns: turns, isPrivate: false,
+                                                            firstRun: FirstRun.active(turns: turns))
+                    let (reply, route) = try await gateway.send(request, role: .everyday, project: nil)
+                    turns.append(Turn(device: "mac", speaker: .broski, text: reply.text, model: route.model))
+                    note("you: \(answer)\nbroski: \(reply.text)")
+                }
+                for turn in turns { try store.append(turn) }
+                note("first run finished: \(FirstRun.justFinished(turns: turns))")
+                let proposal = try await Reflection.run(gateway: gateway, root: root, device: "mac", hidden: [])
+                for change in proposal.remember { note("+ \(change.text)  (\(change.why))") }
+                let spent = UsageLog.entries(root: root)
+                note(String(format: "%d calls, $%.4f", spent.count, spent.reduce(0) { $0 + $1.usd }))
             } catch {
                 note("failed: \(error.localizedDescription)")
             }

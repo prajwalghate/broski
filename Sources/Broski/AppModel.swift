@@ -44,6 +44,11 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     private(set) lazy var homeModel: HomeModel = {
         let model = HomeModel(root: root, library: library, voice: voice) { [weak self] in self?.config ?? .defaults }
         model.onSpeakChange = { [weak self] on in self?.update { $0.speakReplies = on } }
+        model.openSettings = { [weak self] tab in self?.showSettings(tab: tab) }
+        model.useAppleModel = { [weak self] in
+            self?.update { $0.models = ModelSetup.appleOnDevice($0.models ?? .defaults) }
+        }
+        model.firstRunDone = { [weak self] in await self?.reflector.run() ?? "" }
         return model
     }()
     /// How many turns the riff had when it was last saved; turns added after (Back to the riff) are unsaved.
@@ -637,9 +642,13 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
     }
 
-    func showSettings() {
-        showWindow("settings", title: "Broski Settings", size: NSSize(width: 620, height: 560), resizable: false) {
-            SettingsView(app: self)
+    func showSettings(tab: SettingsTab? = nil) {
+        if let tab, let window = windows["settings"] {
+            window.contentView = NSHostingView(rootView: SettingsView(app: self, tab: tab))
+            return bringForward(window)
+        }
+        showWindow("settings", title: "Broski Settings", size: NSSize(width: 640, height: 520), resizable: false) {
+            SettingsView(app: self, tab: tab ?? .general)
         }
     }
 

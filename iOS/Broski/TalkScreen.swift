@@ -44,6 +44,10 @@ final class PhoneHome: ObservableObject {
         guard !thinking else { return }
         turns = conversation.recent(80)
         recallIndex = nil
+        // Someone new (nothing said, known or noted yet): Broski opens the conversation.
+        if FirstRun.needed(turns: turns, aboutYou: Memory.aboutYou(root: store.root)), store.items.isEmpty, !store.sharedUnavailable {
+            add(FirstRun.greetingTurn(device: "iphone"))
+        }
         if project == nil { project = turns.last(where: { $0.project != nil })?.project }
         if topic == nil { topic = turns.last?.topic }
     }
@@ -52,11 +56,16 @@ final class PhoneHome: ObservableObject {
 
     var settings: ModelSettings { store.models ?? .defaults }
 
-    /// A model to talk to: Claude with a key, or any other model the Mac set up.
+    /// A model to talk to: Claude with a key, any other server the Mac set up, or Apple's on-device model.
     var canTalk: Bool {
-        settings.roles.values.contains { choice in
-            settings.provider(choice.provider).map { $0.kind != .anthropic || Keychain.claudeKey != nil } ?? false
-        }
+        ModelSetup.ready(settings, claudeKey: Keychain.claudeKey != nil, appleAvailable: Self.appleAvailable)
+    }
+
+    static var appleAvailable: Bool {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) { return AppleOnDeviceConnector.isAvailable }
+        #endif
+        return false
     }
 
     var gateway: ModelGateway {
@@ -150,7 +159,8 @@ final class PhoneHome: ObservableObject {
         let request = ConversationContext.build(aboutYou: isPrivate ? nil : Memory.aboutYou(root: store.root),
                                                 page: isPrivate ? nil : project.flatMap { store.pages[$0] },
                                                 project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
-                                                decisions: decisions, recall: recall, attachments: attachments)
+                                                decisions: decisions, recall: recall, attachments: attachments,
+                                                firstRun: !isPrivate && FirstRun.active(turns: history))
         let role: ModelRole = deep ? .deep : .everyday
         let gateway = gateway
         let project = project

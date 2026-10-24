@@ -221,6 +221,17 @@ enum Snapshots {
         try? DecisionLog.record(Decision(device: "mac", project: "strado", text: "Paper-trade one week before real money", replaces: first.id), root: app.root)
         app.memoryModel.reload()
         render(MemoryView(model: app.memoryModel), size: NSSize(width: 560, height: 480), to: folder, "memory")
+        // Someone new with no model yet: the greeting and the setup card.
+        let fresh = FileManager.default.temporaryDirectory.appendingPathComponent("broski-snapshot-new-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: fresh, withIntermediateDirectories: true)
+        let newcomer = HomeModel(root: fresh, library: app.library, voice: app.voice) {
+            var config = BroskiConfig.defaults
+            config.models = ModelSettings(providers: [], roles: [:])
+            return config
+        }
+        render(HomeView(model: newcomer, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home-first-run")
+        try? FileManager.default.removeItem(at: fresh)
+
         // Reflection's log: one change undone, one standing.
         try? Reflection.apply(Reflection.Proposal(remember: [.init(text: "Reads replies on the phone between meetings", why: "Oct 24: said so while planning strado")],
                                                   forget: [.init(text: "Prefers short, direct answers", why: "Oct 24: asked for fuller explanations")]),

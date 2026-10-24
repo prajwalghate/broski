@@ -32,6 +32,10 @@ final class HomeModel: ObservableObject {
     let library: Library
     let voice: VoiceInput
     var onSpeakChange: (Bool) -> Void = { _ in }
+    var openSettings: (SettingsTab) -> Void = { _ in }
+    var useAppleModel: () -> Void = {}
+    /// The first run's third answer is in: reflect now, so what they said is remembered from the start.
+    var firstRunDone: () async -> String = { "" }
     private let root: URL
     private let config: () -> BroskiConfig
     private let synthesizer = AVSpeechSynthesizer()
@@ -56,6 +60,10 @@ final class HomeModel: ObservableObject {
         guard !thinking else { return }
         turns = store.recent(80)
         recallIndex = nil
+        // Someone new (nothing said, known or noted yet): Broski opens the conversation.
+        if FirstRun.needed(turns: turns, aboutYou: Memory.aboutYou(root: root)), ItemStore(root: root).allItems().isEmpty {
+            add(FirstRun.greetingTurn(device: "mac"))
+        }
         if project == nil { project = turns.last(where: { $0.project != nil })?.project }
         if topic == nil { topic = turns.last?.topic }
     }
@@ -82,6 +90,12 @@ final class HomeModel: ObservableObject {
     }
 
     var modelLabel: String { deep ? "Deep" : "Everyday" }
+
+    /// Nothing can answer yet: no Claude key, no local server, Apple's model not set up.
+    var needsModel: Bool {
+        !ModelSetup.ready(config().models ?? .defaults, claudeKey: Secrets.get(Secrets.claudeKey) != nil,
+                          appleAvailable: ModelsSettings.appleAvailable)
+    }
 
     var gateway: ModelGateway {
         ModelGateway(settings: config().models ?? .defaults, root: root, device: "mac") { id in
@@ -235,7 +249,8 @@ final class HomeModel: ObservableObject {
         let request = ConversationContext.build(aboutYou: isPrivate ? nil : Memory.aboutYou(root: root),
                                                 page: isPrivate ? nil : project.flatMap { library.pages[$0] },
                                                 project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
-                                                decisions: decisions, recall: recall, attachments: attachments)
+                                                decisions: decisions, recall: recall, attachments: attachments,
+                                                firstRun: !isPrivate && FirstRun.active(turns: history))
         let role: ModelRole = deep ? .deep : .everyday
         let gateway = gateway
         let project = project
@@ -255,6 +270,13 @@ final class HomeModel: ObservableObject {
                          sources: sources.isEmpty ? nil : sources))
                 if speak { say(text) }
                 if !wasPrivate { suggestSave(force: false) }
+                if !wasPrivate, FirstRun.justFinished(turns: turns) {
+                    let result = await firstRunDone()
+                    if !result.isEmpty {
+                        add(Turn(device: "mac", speaker: .note, text: "Getting to know you: \(result) See or undo it in What Broski knows.",
+                                 project: self.project))
+                    }
+                }
             } catch {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
@@ -486,6 +508,8 @@ struct HomeView: View {
         .frame(minWidth: 480, minHeight: 560)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { focused = true }
+        // Back from Settings with a key or a model: look again.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in model.objectWillChange.send() }
     }
 
     private var header: some View {
@@ -547,6 +571,7 @@ struct HomeView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
+                    if model.needsModel && !model.isPrivate { modelSetup }
                     if model.visibleTurns.isEmpty {
                         Text(model.isPrivate
                              ? "A blank slate. Nothing you say here is kept unless you choose to keep it."
@@ -577,6 +602,25 @@ struct HomeView: View {
             .onChange(of: model.visibleTurns.count) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
             .onChange(of: model.card) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
         }
+    }
+
+    /// No model yet: the three ways to get one.
+    private var modelSetup: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("PICK A MODEL TO TALK TO").font(.system(size: 10, weight: .semibold)).foregroundStyle(Brand.purple)
+            Text("Broski needs a model to reply. Claude is the best at this; a model on this Mac keeps everything here.")
+                .font(.system(size: 13))
+            HStack(spacing: 8) {
+                Button("Add a Claude key") { model.openSettings(.ai) }.buttonStyle(.borderedProminent).tint(Brand.purple)
+                Button("Use a model on this Mac") { model.openSettings(.models) }
+                if ModelsSettings.appleAvailable {
+                    Button("Use Apple's on-device model") { model.useAppleModel() }
+                }
+            }
+            .controlSize(.small)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).stroke(Brand.purple.opacity(0.35)))
     }
 
     @ViewBuilder private func row(_ turn: Turn) -> some View {

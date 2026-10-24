@@ -280,6 +280,81 @@ extension SaveCard {
     }
 }
 
+// MARK: First run
+
+/// Someone new: the conversation opens with a greeting, and for their first three answers Broski gets to know them.
+/// Then reflection reads what they said, so it's remembered (and can be seen and undone) from the start.
+public enum FirstRun {
+    public static let topic = "getting started"
+
+    static let greeting = """
+    Hey, I'm Broski. Think of me as a friend who keeps track of your projects. Talk to me about anything you're \
+    working on, share screenshots or PDFs, and I'll offer to save the decisions and todos that come up. Nothing is \
+    saved unless you tap Save, and private mode keeps nothing at all. To start: what should I call you, and what are \
+    you working on these days?
+    """
+
+    static let guide = """
+    This is the user's first conversation with you. Get to know them, one short question at a time: what to call them, \
+    what they're working on (a sentence per project), and how they like to work and be answered. When they describe \
+    something they're building, say you can set it up as a project with a tracker and setup drafts. After their third \
+    answer, tell them you'll remember what matters (they can see and undo it under What Broski knows) and that from now \
+    on they can just talk.
+    """
+
+    public static func greetingTurn(device: String, at: Date = Date()) -> Turn {
+        Turn(at: at, device: device, speaker: .broski, text: greeting, topic: topic)
+    }
+
+    /// Nothing said yet and nothing known: show the greeting.
+    public static func needed(turns: [Turn], aboutYou: String?) -> Bool {
+        turns.isEmpty && (aboutYou?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    private static func answers(_ turns: [Turn]) -> Int? {
+        guard turns.contains(where: { $0.speaker == .broski && $0.topic == topic }) else { return nil }
+        return turns.filter { $0.speaker == .you }.count
+    }
+
+    /// Still getting to know them: the greeting is there and they've answered three times or fewer.
+    public static func active(turns: [Turn]) -> Bool {
+        answers(turns).map { $0 <= 3 } ?? false
+    }
+
+    /// Their third answer is in: time to remember what they said.
+    public static func justFinished(turns: [Turn]) -> Bool {
+        answers(turns) == 3
+    }
+}
+
+/// Whether anything can answer yet, and the one-tap setup for Apple's on-device model.
+public enum ModelSetup {
+    /// Some role has a model that can answer now: Claude with a key, any OpenAI-compatible server, or Apple's model where
+    /// it's available.
+    public static func ready(_ settings: ModelSettings, claudeKey: Bool, appleAvailable: Bool) -> Bool {
+        (Array(settings.roles.values) + Array(settings.localRoles.values)).contains { choice in
+            switch settings.provider(choice.provider)?.kind {
+            case .anthropic: return claudeKey
+            case .openAICompatible: return true
+            case .appleOnDevice: return appleAvailable
+            case nil: return false
+            }
+        }
+    }
+
+    /// Every role, and every local-only role, on Apple's on-device model: free, private, no key.
+    public static func appleOnDevice(_ settings: ModelSettings) -> ModelSettings {
+        var new = settings
+        let id = new.providers.first { $0.kind == .appleOnDevice }?.id ?? "apple"
+        if new.provider(id) == nil { new.add(ModelProvider(id: id, kind: .appleOnDevice)) }
+        for role in ModelRole.allCases {
+            new.roles[role] = ModelChoice(provider: id, model: "default")
+            new.localRoles[role] = ModelChoice(provider: id, model: "default")
+        }
+        return new
+    }
+}
+
 // MARK: Context for a reply
 
 /// Builds what the model sees for the next reply: who Broski is, what it knows about you (fenced as data), the
@@ -301,8 +376,9 @@ public enum ConversationContext {
 
     public static func build(aboutYou: String?, page: ProjectPage?, project: String?, turns: [Turn], isPrivate: Bool,
                              maxTurnChars: Int = 24_000, decisions: [Decision] = [], recall: [RecallHit] = [],
-                             attachments: [ModelPart] = []) -> ModelRequest {
+                             attachments: [ModelPart] = [], firstRun: Bool = false) -> ModelRequest {
         var system = persona
+        if firstRun, !isPrivate { system += "\n\n" + FirstRun.guide }
         if isPrivate {
             system += "\n\nThis is a private conversation: you know nothing about the user or their projects here, and nothing is kept."
         } else {
