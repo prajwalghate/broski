@@ -111,6 +111,30 @@ struct ProjectsTests {
         #expect(throws: ProjectSetup.Failure.exists("set-log")) { try ProjectSetup.create(proposal, root: root, date: day) }
     }
 
+    @Test("connecting a repo to a project: its folder, suggested packs, and a tracker read in place")
+    func connectRepo() throws {
+        let root = try scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = root.appendingPathComponent("code/strado")
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent("register/items"), withIntermediateDirectories: true)
+        try "".write(to: repo.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+        let result = try ProjectSetup.connect(folder: repo, project: "strado", root: root)
+        #expect(result.packs == ["web"])
+        #expect(result.tracker == "register-items")
+        let entry = try #require(ProjectRegistry.load(from: root).entry(notes: "strado"))
+        #expect(entry.folders == [repo.path])
+        #expect(entry.trackers.first?.readOnly == true && entry.trackers.first?.path == repo.path)
+        // Connecting again changes nothing; a folder that isn't there is refused.
+        _ = try ProjectSetup.connect(folder: repo, project: "strado", root: root)
+        #expect(ProjectRegistry.load(from: root).entry(notes: "strado")?.folders.count == 1)
+        #expect(throws: ProjectSetup.Failure.noFolder(root.appendingPathComponent("nope").path)) {
+            try ProjectSetup.connect(folder: root.appendingPathComponent("nope"), project: "strado", root: root)
+        }
+        #expect(ConversationCommand.parse("connect ~/code/strado", catalog: nil) == .connect("~/code/strado"))
+        #expect(ConversationCommand.parse("connect the repo at /Users/me/code/x", catalog: nil) == .connect("/Users/me/code/x"))
+        #expect(ConversationCommand.parse("connect with the team tomorrow", catalog: nil) == nil)
+    }
+
     // MARK: Packs
 
     @Test("built-in packs, your own packs overriding them, and packs suggested from a repo")

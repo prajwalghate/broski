@@ -2,6 +2,7 @@ import AVFoundation
 import AppKit
 import BroskiCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The home conversation: one ongoing conversation with Broski, kept as files in the Broski folder. Replies come
 /// through the model gateway; notes, todos and decisions are saved only from a card you tap, or a "note: …".
@@ -21,6 +22,10 @@ final class HomeModel: ObservableObject {
     /// Showing one thread (a topic) instead of the whole conversation.
     @Published var thread: String?
     @Published var card: SaveCard?
+    /// Files chosen for the next message, not sent yet.
+    @Published var pending: [URL] = []
+    /// A new project Broski proposes; nothing is created until you tap Create.
+    @Published var proposal: ProjectProposal?
     @Published var problem: String?
     @Published var speak: Bool
 
@@ -94,12 +99,104 @@ final class HomeModel: ObservableObject {
     // MARK: Talking
 
     func send() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !thinking else { return }
+        var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let files = pending
+        guard !text.isEmpty || !files.isEmpty, !thinking else { return }
         draft = ""
         if let command = ConversationCommand.parse(text, catalog: library.catalog) { return run(command) }
-        add(Turn(device: "mac", speaker: .you, text: text, project: project, topic: topic))
-        reply()
+        pending = []
+        if text.isEmpty { text = "Shared " + files.map(\.lastPathComponent).joined(separator: ", ") }
+        // What you share is kept with the project; a private conversation keeps nothing, so nothing is copied.
+        var stored: [String] = []
+        if !isPrivate {
+            for file in files {
+                do {
+                    let path = try Resources.add(file: file, project: project, root: root)
+                    stored.append(path)
+                    if let project {
+                        try? ChangeStream.append([ChangeEvent(at: Date(), project: project, source: "broski", kind: "added",
+                                                              id: "\(project):resource/\((path as NSString).lastPathComponent)",
+                                                              title: file.lastPathComponent)], root: root, project: project)
+                    }
+                } catch {
+                    problem = "Couldn't keep \(file.lastPathComponent): \(error.localizedDescription)"
+                }
+            }
+        }
+        let turn = Turn(device: "mac", speaker: .you, text: text, files: isPrivate ? files.map(\.path) : (stored.isEmpty ? nil : stored),
+                        project: project, topic: topic)
+        add(turn)
+        let links = Resources.links(in: text)
+        if !isPrivate, !links.isEmpty {
+            try? Resources.record(links: links, project: project, turn: turn.id, root: root, device: "mac")
+        }
+        reply(attachments: isPrivate ? Resources.parts(forFiles: files) : Resources.parts(for: stored, root: root))
+    }
+
+    // MARK: Attachments
+
+    func attach(_ urls: [URL]) {
+        pending += urls.filter { url in !pending.contains(url) }
+    }
+
+    func removePending(_ url: URL) {
+        pending.removeAll { $0 == url }
+    }
+
+    func chooseFiles() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.message = "Share files with Broski. They're kept in the project's resources."
+        guard panel.runModal() == .OK else { return }
+        attach(panel.urls)
+    }
+
+    /// A screenshot of a region you pick (Esc cancels), attached to the next message.
+    func takeScreenshot() {
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Screenshot \(stamp).png")
+        Task.detached { [weak self] in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-i", "-x", url.path]
+            try? process.run()
+            process.waitUntilExit()
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
+            await MainActor.run { self?.attach([url]) }
+        }
+    }
+
+    /// Opens a shared file, or the project's folder in Finder.
+    func open(file path: String) {
+        NSWorkspace.shared.open(path.hasPrefix("/") ? URL(fileURLWithPath: path) : root.appendingPathComponent(path))
+    }
+
+    func openProjectFolder() {
+        guard let project else { return }
+        let folder = root.appendingPathComponent("projects/\(project)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(folder)
+    }
+
+    // MARK: New projects
+
+    func createProject() {
+        guard var proposal else { return }
+        proposal.name = proposal.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let id = try ProjectSetup.create(proposal, root: root)
+            self.proposal = nil
+            library.reload()
+            library.loadRegistry()
+            project = id
+            add(Turn(device: "mac", speaker: .topic, text: "New project: \(proposal.name)", project: id))
+            let packs = (["core"] + proposal.packs).joined(separator: " + ")
+            add(Turn(device: "mac", speaker: .note,
+                     text: "Set up \(proposal.name): a tracker (\(packs)), a first note, and setup drafts in projects/\(id)/setup", project: id))
+        } catch {
+            problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
     }
 
     private func add(_ turn: Turn) {
@@ -127,7 +224,7 @@ final class HomeModel: ObservableObject {
         return index
     }
 
-    private func reply() {
+    private func reply(attachments: [ModelPart] = []) {
         let history = visibleTurns
         let said = history.last(where: { $0.speaker == .you })?.text ?? ""
         let localOnly = touchesLocalOnly(history.suffix(12).map(\.text).joined(separator: "\n"))
@@ -138,7 +235,7 @@ final class HomeModel: ObservableObject {
         let request = ConversationContext.build(aboutYou: isPrivate ? nil : Memory.aboutYou(root: root),
                                                 page: isPrivate ? nil : project.flatMap { library.pages[$0] },
                                                 project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
-                                                decisions: decisions, recall: recall)
+                                                decisions: decisions, recall: recall, attachments: attachments)
         let role: ModelRole = deep ? .deep : .everyday
         let gateway = gateway
         let project = project
@@ -194,6 +291,19 @@ final class HomeModel: ObservableObject {
         case .switchProject(let name):
             project = name
             add(Turn(device: "mac", speaker: .topic, text: name, project: name))
+        case .connect(let path):
+            guard let project else { return problem = "Pick the project first (the menu below), then connect its folder." }
+            let folder = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+            do {
+                let found = try ProjectSetup.connect(folder: folder, project: project, root: root)
+                library.loadRegistry()
+                var said = "Connected \(folder.path) to \(project)."
+                said += found.tracker.map { " Its tracker (\($0)) is read in place, read-only." } ?? " No tracker there, so its docs are read."
+                if !found.packs.isEmpty { said += " Packs that fit: \(found.packs.joined(separator: ", "))." }
+                add(Turn(device: "mac", speaker: .note, text: said, project: project))
+            } catch {
+                problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 
@@ -252,6 +362,7 @@ final class HomeModel: ObservableObject {
                     add(Turn(device: "mac", speaker: .topic, text: found, project: found, topic: review.topic))
                 }
                 if let topic = review.topic { self.topic = topic }
+                if let proposed = review.newProject, proposal == nil, !isPrivate { proposal = proposed }
                 if var found = review.card {
                     if found.project == nil { found.project = self.project }
                     card = found
@@ -333,7 +444,15 @@ final class HomeModel: ObservableObject {
     }
 
     func keepPrivate() {
-        let kept = privateTurns
+        // Files shared privately were never copied; keeping the conversation keeps them with the project too.
+        let kept = privateTurns.map { turn -> Turn in
+            guard let files = turn.files else { return turn }
+            var copy = turn
+            copy.files = files.compactMap { path in
+                path.hasPrefix("/") ? try? Resources.add(file: URL(fileURLWithPath: path), project: turn.project, root: root) : path
+            }
+            return copy
+        }
         privateTurns = []
         isPrivate = false
         askKeep = false
@@ -429,6 +548,10 @@ struct HomeView: View {
             Toggle("Speak", isOn: Binding(get: { model.speak }, set: { model.speak = $0; model.onSpeakChange($0) }))
                 .toggleStyle(.switch).controlSize(.mini)
                 .help("Read Broski's replies aloud")
+            if model.project != nil {
+                Button { model.openProjectFolder() } label: { Image(systemName: "folder") }
+                    .buttonStyle(.borderless).help("Open the project's folder: resources, setup drafts, tracker")
+            }
             Button(action: openMemory) { Image(systemName: "book") }
                 .buttonStyle(.borderless).help("What Broski knows")
             Button(action: openDashboard) { Image(systemName: "square.grid.2x2") }
@@ -483,6 +606,7 @@ struct HomeView: View {
                         .font(.system(size: 12)).id("thinking")
                     }
                     if let card = model.card { saveCard(card).id("card") }
+                    if let proposal = model.proposal { projectCard(proposal).id("proposal") }
                     if let problem = model.problem ?? voice.problem {
                         Text(problem).font(.system(size: 12)).foregroundStyle(.orange).textSelection(.enabled)
                     }
@@ -509,13 +633,28 @@ struct HomeView: View {
                 .font(.system(size: 12)).foregroundStyle(.green)
                 .padding(.leading, 34)
         case .you:
-            HStack {
-                Spacer(minLength: 60)
-                Text(turn.text)
-                    .font(.system(size: 13.5)).textSelection(.enabled)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Brand.purple.opacity(0.15)))
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .trailing, spacing: 6) {
+                HStack {
+                    Spacer(minLength: 60)
+                    Text(turn.text)
+                        .font(.system(size: 13.5)).textSelection(.enabled)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Brand.purple.opacity(0.15)))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let files = turn.files, !files.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(files, id: \.self) { file in
+                            Button { model.open(file: file) } label: {
+                                Label((file as NSString).lastPathComponent, systemImage: "doc")
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
             }
         case .broski:
             HStack(alignment: .top, spacing: 10) {
@@ -565,6 +704,46 @@ struct HomeView: View {
         .padding(.leading, 34)
     }
 
+    private func projectCard(_ proposal: ProjectProposal) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("NEW PROJECT").font(.system(size: 10, weight: .semibold)).foregroundStyle(Brand.purple)
+            TextField("Name", text: Binding(get: { model.proposal?.name ?? "" }, set: { model.proposal?.name = $0 }))
+                .textFieldStyle(.roundedBorder).font(.system(size: 14, weight: .semibold))
+            if !proposal.summary.isEmpty { Text(proposal.summary).font(.system(size: 12)).foregroundStyle(.secondary) }
+            HStack(spacing: 6) {
+                Text("Packs").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                ForEach(Packs.builtIn.filter { $0.id != "core" }, id: \.id) { pack in
+                    let on = proposal.packs.contains(pack.id)
+                    Button(pack.name) {
+                        if on { model.proposal?.packs.removeAll { $0 == pack.id } } else { model.proposal?.packs.append(pack.id) }
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(on ? Brand.purple : Color.primary.opacity(0.06)))
+                    .foregroundStyle(on ? Color.white : .primary)
+                }
+            }
+            if !proposal.goals.isEmpty {
+                Text("First goals").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                ForEach(proposal.goals, id: \.self) { Text("• " + $0).font(.system(size: 12)) }
+            }
+            if !proposal.questions.isEmpty {
+                Text("Open questions").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                ForEach(proposal.questions, id: \.self) { Text("• " + $0).font(.system(size: 12)) }
+            }
+            HStack {
+                Button("Create project") { model.createProject() }.buttonStyle(.borderedProminent).tint(Brand.purple)
+                Button("Not now") { model.proposal = nil }.buttonStyle(.borderless).foregroundStyle(.secondary)
+            }
+            Text("Creates its folder, a tracker, a first note and setup drafts in your Broski folder. Repos aren't touched.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Brand.purple.opacity(0.1)))
+        .padding(.leading, 34)
+    }
+
     private func color(_ kind: SaveCard.Entry.Kind) -> Color {
         switch kind {
         case .todo: return .blue
@@ -588,7 +767,25 @@ struct HomeView: View {
                 }
             }
             .padding(.horizontal, 1)
+            if !model.pending.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(model.pending, id: \.self) { url in
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc").font(.system(size: 10))
+                            Text(url.lastPathComponent).font(.system(size: 11)).lineLimit(1)
+                            Button { model.removePending(url) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                                .buttonStyle(.borderless).help("Leave this file out")
+                        }
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08)))
+                    }
+                }
+            }
             HStack(alignment: .bottom, spacing: 8) {
+                Button { model.chooseFiles() } label: { Image(systemName: "paperclip") }
+                    .buttonStyle(.borderless).help("Share files: kept in the project's resources")
+                Button { model.takeScreenshot() } label: { Image(systemName: "camera.viewfinder") }
+                    .buttonStyle(.borderless).help("Screenshot a region and share it")
                 TextField("Talk to Broski, or type “note: …”", text: $model.draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
@@ -610,6 +807,15 @@ struct HomeView: View {
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.4)))
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                for provider in providers {
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        guard let url else { return }
+                        Task { @MainActor in model.attach([url]) }
+                    }
+                }
+                return true
+            }
             HStack(spacing: 8) {
                 Menu {
                     Button("No project") { model.project = nil }

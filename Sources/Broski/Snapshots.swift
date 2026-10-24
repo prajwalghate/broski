@@ -205,6 +205,11 @@ enum Snapshots {
         ])
         render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home")
         home.card = nil
+        home.proposal = ProjectProposal(name: "Set Log", summary: "Log gym sets by voice on the iPhone.", packs: ["mobile", "ai"],
+                                        goals: ["Parse “bench, 60 kilos, 8 reps” offline", "Log a whole workout hands-free"],
+                                        questions: ["Kilos only, or pounds too?"])
+        render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 900), to: folder, "home-new-project")
+        home.proposal = nil
         home.goPrivate()
         render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 420), to: folder, "home-private")
         home.discardPrivate()

@@ -123,6 +123,8 @@ public enum ConversationCommand: Equatable, Sendable {
     /// "forget that …" (empty: the last thing remembered).
     case forget(String)
     case switchProject(String)
+    /// "connect ~/code/strado": a repo or folder for the current project.
+    case connect(String)
 
     public static func parse(_ text: String, catalog: ProjectCatalog?) -> ConversationCommand? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -135,6 +137,9 @@ public enum ConversationCommand: Equatable, Sendable {
         case "save that", "save this", "save it", "save those": return .saveThat
         case "forget that", "forget it": return .forget("")
         default: break
+        }
+        if let path = capture(#"^(?:connect|link)\s+(?:the\s+)?(?:repo|folder|code)?\s*(?:at|in)?\s*([~/]\S*)$"#, in: trimmed) {
+            return .connect(path)
         }
         if let rest = capture(#"^remember(?:\s+that)?\s+(.+)$"#, in: trimmed) { return .remember(rest) }
         if let rest = capture(#"^forget(?:\s+that)?\s+(.+)$"#, in: trimmed) { return .forget(rest) }

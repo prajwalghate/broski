@@ -177,13 +177,48 @@ public enum ProjectSetup {
     public enum Failure: Error, Equatable, LocalizedError {
         case exists(String)
         case badName
+        case noFolder(String)
 
         public var errorDescription: String? {
             switch self {
             case .exists(let id): return "There's already a project called \(id). Pick another name."
             case .badName: return "That name has no letters or digits to make a folder from."
+            case .noFolder(let path): return "There's no folder at \(path)."
             }
         }
+    }
+
+    /// What connecting a repo found.
+    public struct Connection: Equatable, Sendable {
+        /// Packs that fit, from the repo's files.
+        public var packs: [String]
+        /// The tracker shape found in the repo, read in place from now on; nil when it has only plain docs.
+        public var tracker: String?
+    }
+
+    /// Adds a code folder to a project (creating its entry if needed), and reads a tracker found there in place,
+    /// read-only. Broski never writes to the repo.
+    @discardableResult
+    public static func connect(folder: URL, project: String, root: URL) throws -> Connection {
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
+            throw Failure.noFolder(folder.path)
+        }
+        let path = folder.standardizedFileURL.path
+        let source = TrackerSource(id: project, name: project, path: path, readOnly: true)
+        let shape = TrackerPresets.detect(source).adapter
+        let tracker = shape == "generic-markdown" ? nil : shape
+        var registry = ProjectRegistry.load(from: root)
+        var entry = registry.entry(notes: project) ?? ProjectRegistry.Entry(name: project, notes: project)
+        if !entry.folders.contains(path) { entry.folders.append(path) }
+        if tracker != nil, !entry.trackers.contains(where: { $0.path == path }) { entry.trackers.append(source) }
+        if let index = registry.projects.firstIndex(where: { $0.notes == project }) {
+            registry.projects[index] = entry
+        } else {
+            registry.projects.append(entry)
+        }
+        try registry.save(to: root)
+        return Connection(packs: Packs.suggest(forFolder: folder), tracker: tracker)
     }
 
     @discardableResult

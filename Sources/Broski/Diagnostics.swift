@@ -158,6 +158,9 @@ enum Diagnostics {
                 let (cardReply, cardRoute) = try await gateway.send(ask, role: .fast, project: "strado")
                 let review = SaveCard.review(cardReply.text, catalog: catalog, decisions: [standing])
                 note("review via \(cardRoute.model): project \(review?.project ?? "none"), topic \(review?.topic ?? "none")")
+                if let proposal = review?.newProject {
+                    note("new project proposed: \(proposal.name) (\(proposal.slug)) · packs \(proposal.packs.joined(separator: ", ")) · goals \(proposal.goals.joined(separator: "; "))")
+                }
                 note("save card: " + (review?.card.map { c in c.items.map { "\($0.kind.rawValue) \($0.title)" + ($0.replaces == standing.id ? " (replaces the $500 decision)" : "") }.joined(separator: " | ") } ?? "nothing to save"))
                 let spent = UsageLog.entries(root: root)
                 note(String(format: "logged %d calls, $%.5f", spent.count, spent.reduce(0) { $0 + $1.usd }))
