@@ -273,6 +273,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
         if config.showFloatingButton { makeBubble().setVisible(true) }
         applyFnKey()
+        reflector.start()
         if config.wakeWordEnabled { capture.setWakeListening(true) }
         if UserDefaults.standard.integer(forKey: Self.onboardingKey) < Self.onboardingVersion {
             showOnboarding()
@@ -518,7 +519,26 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         if listening { homeModel.holdStart() }
     }
 
-    private(set) lazy var memoryModel = MemoryModel(root: root, library: library)
+    private(set) lazy var memoryModel: MemoryModel = {
+        let model = MemoryModel(root: root, library: library)
+        model.reflect = { [weak self] in await self?.reflector.run() ?? "" }
+        model.reflectionOn = ({ [weak self] in self?.config.reflection ?? true }, { [weak self] on in self?.update { $0.reflection = on } })
+        return model
+    }()
+
+    /// Every model call goes through one gateway: Claude's key from the Keychain, others under "model.<id>".
+    func makeGateway() -> ModelGateway {
+        ModelGateway(settings: config.models ?? .defaults, root: root, device: "mac") { id in
+            id == "claude" ? Secrets.get(Secrets.claudeKey) : Secrets.get("model.\(id)")
+        }
+    }
+
+    private(set) lazy var reflector: Reflector = {
+        let reflector = Reflector(root: root, library: library, config: { [weak self] in self?.config ?? .defaults },
+                                  gateway: { [weak self] in self?.makeGateway() })
+        reflector.onChange = { [weak self] in self?.memoryModel.reload() }
+        return reflector
+    }()
 
     /// What Broski knows about you, and every project's decisions.
     func showMemory() {

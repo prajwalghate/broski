@@ -65,6 +65,8 @@ public struct BroskiConfig: Codable, Equatable {
     public var noteHotkey: String = "option+shift+n"
     /// Which model does what; nil means the defaults (Claude by role).
     public var models: ModelSettings? = nil
+    /// When the Mac is idle, reread what you said and update what Broski knows about you (every change logged, undoable).
+    public var reflection: Bool = true
 
     /// The conversation opens on the main shortcut and fn.
     public var conversationFirst: Bool { frontDoor != "note" }
@@ -164,6 +166,7 @@ public struct BroskiConfig: Codable, Equatable {
         frontDoor = (try? c.decodeIfPresent(String.self, forKey: .frontDoor)) ?? d.frontDoor
         noteHotkey = (try? c.decodeIfPresent(String.self, forKey: .noteHotkey)) ?? d.noteHotkey
         models = (try? c.decodeIfPresent(ModelSettings.self, forKey: .models)) ?? d.models
+        reflection = (try? c.decodeIfPresent(Bool.self, forKey: .reflection)) ?? d.reflection
         if wakeWords.isEmpty { wakeWords = d.wakeWords }
         silenceSeconds = min(max(silenceSeconds, 0.8), 6)
     }

@@ -103,6 +103,10 @@ public enum Memory {
         /// remember | forget
         var op: String
         var text: String
+        /// Who made the change: nil (you, in a conversation), "reflection", or "undo".
+        var by: String?
+        /// For reflection: what in your words led to it.
+        var why: String?
     }
 
     static func folder(_ root: URL) -> URL { root.appendingPathComponent("memory", isDirectory: true) }
@@ -132,19 +136,20 @@ public enum Memory {
         try JSONLines.append(event, to: folder(root).appendingPathComponent("remembered.\(event.device).jsonl"))
     }
 
-    public static func remember(_ fact: String, root: URL, device: String, at: Date = Date()) throws {
+    public static func remember(_ fact: String, root: URL, device: String, at: Date = Date(), by: String? = nil, why: String? = nil) throws {
         let text = fact.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        try append(Event(at: at, device: device, op: "remember", text: text), root: root)
+        try append(Event(at: at, device: device, op: "remember", text: text, by: by, why: why), root: root)
     }
 
     /// Forgets the remembered fact containing `phrase` (the latest one when `phrase` is empty). False when nothing matched.
     @discardableResult
-    public static func forget(_ phrase: String, root: URL, device: String, at: Date = Date()) throws -> Bool {
+    public static func forget(_ phrase: String, root: URL, device: String, at: Date = Date(), by: String? = nil, why: String? = nil) throws -> Bool {
         let facts = remembered(root: root)
         let wanted = phrase.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let fact = wanted.isEmpty ? facts.last : facts.last(where: { $0.lowercased().contains(wanted) }) else { return false }
-        try append(Event(at: at, device: device, op: "forget", text: fact), root: root)
+        let exact = facts.last { $0.lowercased() == wanted }
+        guard let fact = wanted.isEmpty ? facts.last : exact ?? facts.last(where: { $0.lowercased().contains(wanted) }) else { return false }
+        try append(Event(at: at, device: device, op: "forget", text: fact, by: by, why: why), root: root)
         return true
     }
 
