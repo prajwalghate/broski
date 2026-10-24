@@ -270,6 +270,25 @@ enum Snapshots {
         // Trackers: the Tracker tab, onboarding, and adding to a tracker Broski keeps.
         UserDefaults.standard.set(ProjectTab.tracker.rawValue, forKey: "BroskiDashboardTab")
         render(DashboardView(library: library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "strado"), size: size, to: folder, "dashboard-tracker")
+
+        // A project set up in a conversation: its command center from its packs, with a build in its tracker.
+        if library.project(named: "set-log") == nil {
+            _ = try? ProjectSetup.create(ProjectProposal(name: "Set Log", summary: "Log gym sets by voice.", packs: ["mobile", "ai"],
+                                                         goals: ["Parse a spoken set offline"], questions: []), root: app.root)
+            let builds = app.root.appendingPathComponent("projects/set-log/tracker/layers/builds")
+            try? "# 0.3 on TestFlight\n\nVoice parsing on device.\n".write(to: builds.appendingPathComponent("0.3.md"), atomically: true, encoding: .utf8)
+            _ = try? library.store.create(ItemDraft(project: "set-log", kind: .bug, title: "Mic cuts out after 30 seconds"))
+            try? DecisionLog.record(Decision(device: "mac", project: "set-log", text: "Kilos only for now"), root: app.root)
+            library.reload()
+            library.loadRegistry()
+            let until = Date().addingTimeInterval(15)
+            while (library.readingTrackers || library.project(named: "set-log")?.records.isEmpty != false) && Date() < until {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            }
+        }
+        UserDefaults.standard.set(ProjectTab.center.rawValue, forKey: "BroskiDashboardTab")
+        render(DashboardView(library: library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "set-log"), size: size, to: folder, "dashboard-center")
+        UserDefaults.standard.set(ProjectTab.tracker.rawValue, forKey: "BroskiDashboardTab")
         if let strado = library.project(named: "strado") {
             render(OnboardSheet(library: library, project: strado) {}, size: NSSize(width: 640, height: 300), to: folder, "tracker-onboard")
             if let tracker = strado.entry?.trackers.first {

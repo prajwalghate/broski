@@ -132,7 +132,8 @@ private struct SidebarRow: View {
 // MARK: Project
 
 enum ProjectTab: String, CaseIterable, Identifiable {
-    case overview = "Overview", tracker = "Tracker", board = "Board", list = "List", sessions = "Sessions", screenshots = "Screenshots"
+    case overview = "Overview", center = "Command center", tracker = "Tracker", board = "Board", list = "List", sessions = "Sessions",
+         screenshots = "Screenshots"
     var id: String { rawValue }
 }
 
@@ -262,7 +263,7 @@ struct ProjectPane: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .frame(width: 500)
+        .frame(width: 620)
     }
 
     @ViewBuilder private var filters: some View {
@@ -339,6 +340,13 @@ struct ProjectPane: View {
                 ProjectOverview(library: library, project: project.name, selectedID: $selectedID)
             } else {
                 BrainHome(library: library, selectedID: $selectedID) { library.focusRequest = $0 }
+            }
+        case .center:
+            if let project, !project.isInbox {
+                CommandCenterView(library: library, project: project)
+            } else {
+                Text("Pick a project to see its command center.").foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         case .tracker:
             if let project, !project.records.isEmpty {
