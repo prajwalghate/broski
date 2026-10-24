@@ -87,8 +87,26 @@ enum Screenshot {
         case failed(String)
     }
 
+    /// Pick a window or an area to capture. Started from a Broski window, Broski's windows step aside while you
+    /// pick, so you can see and capture what's under them, and come back in the same order after.
     @MainActor
     static func capture() async -> Result {
+        let hidden = NSApp.isActive ? NSApp.orderedWindows.filter { $0.isVisible && $0.styleMask.contains(.titled) } : []
+        let key = NSApp.keyWindow
+        hidden.forEach { $0.orderOut(nil) }
+        // Let the window server take them off the screen before the picker reads what's there.
+        if !hidden.isEmpty { try? await Task.sleep(nanoseconds: 150_000_000) }
+        let result = await pick()
+        if !hidden.isEmpty {
+            NSApp.activate(ignoringOtherApps: true)
+            for window in hidden.reversed() { window.orderFront(nil) }
+            (key.flatMap { hidden.contains($0) ? $0 : nil } ?? hidden.first)?.makeKeyAndOrderFront(nil)
+        }
+        return result
+    }
+
+    @MainActor
+    private static func pick() async -> Result {
         if #available(macOS 14.0, *) {
             switch await ScreenshotPicker.shared.pick() {
             case .image(let url): return .image(url)

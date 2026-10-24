@@ -441,6 +441,7 @@ struct PanelView: View {
                                 Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.white, .black.opacity(0.6))
                             }
                             .buttonStyle(.plain)
+                            .help("Remove this screenshot")
                             .offset(x: 4, y: -4)
                         }
                     }

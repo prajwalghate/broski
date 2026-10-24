@@ -462,6 +462,7 @@ struct TalkScreen: View {
             } label: {
                 Image(systemName: "folder")
             }
+            .accessibilityLabel("Project")
             .disabled(model.isPrivate)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -482,6 +483,7 @@ struct TalkScreen: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
+            .accessibilityLabel("More")
         }
     }
 
@@ -557,6 +559,7 @@ struct TalkScreen: View {
                     }
                     Spacer()
                     Button { model.removeFromCard(i) } label: { Image(systemName: "xmark").font(.caption) }
+                        .accessibilityLabel("Leave this one out")
                         .buttonStyle(.borderless).foregroundStyle(.secondary)
                 }
             }
@@ -604,6 +607,7 @@ struct TalkScreen: View {
                                 Button { model.removePending(url) } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.6))
                                 }
+                                .accessibilityLabel("Remove")
                                 .offset(x: 6, y: -6)
                             }
                         }

@@ -192,6 +192,7 @@ struct CaptureView: View {
                             Button { capture.remove(url) } label: {
                                 Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(.white, .black.opacity(0.6))
                             }
+                            .accessibilityLabel("Remove photo")
                             .offset(x: 6, y: -6)
                         }
                 }

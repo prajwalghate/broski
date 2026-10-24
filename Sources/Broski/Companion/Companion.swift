@@ -567,4 +567,5 @@ private func closeButton(_ action: @escaping () -> Void) -> some View {
             .background(Circle().fill(Color.primary.opacity(0.06)))
     }
     .buttonStyle(.plain)
+    .help("Close")
 }

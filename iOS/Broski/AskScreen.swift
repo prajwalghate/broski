@@ -30,6 +30,7 @@ struct AskScreen: View {
                                 .frame(width: 36, height: 36)
                                 .background(Circle().fill(recorder.isRecording ? Color.red : Brand.purple))
                         }
+                        .accessibilityLabel(recorder.isRecording ? "Done talking" : "Ask by voice")
                     }
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemBackground)))

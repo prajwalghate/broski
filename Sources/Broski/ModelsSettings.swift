@@ -145,6 +145,7 @@ struct ModelsSettings: View {
                     Menu {
                         ForEach(models, id: \.self) { model in Button(model) { set(model) } }
                     } label: { Image(systemName: "chevron.down") }
+                    .help("Models this server has")
                     .menuStyle(.borderlessButton)
                     .frame(width: 26)
                 }

@@ -347,7 +347,7 @@ struct RecordInspector: View {
                 HStack {
                     Text(record.id).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
                     Spacer()
-                    Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                    Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Close")
                 }
                 Text(record.title).font(.system(size: 16, weight: .semibold)).textSelection(.enabled)
                 if !record.summary.isEmpty { Text(record.summary).font(.system(size: 13)).textSelection(.enabled) }

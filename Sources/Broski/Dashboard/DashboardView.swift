@@ -383,7 +383,7 @@ struct SearchField: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search", text: $text).textFieldStyle(.plain)
             if !text.isEmpty {
-                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.help("Clear the search")
                     .buttonStyle(.plain)
             }
         }
@@ -405,7 +405,7 @@ struct BannerView: View {
             if library.canUndo {
                 Button("Undo") { library.undoDelete() }.buttonStyle(.borderless).foregroundStyle(Brand.purple)
             }
-            Button { library.banner = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+            Button { library.banner = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Dismiss")
         }
         .font(.system(size: 12, weight: .medium))
         .padding(.horizontal, 16)
@@ -650,6 +650,7 @@ struct ItemRow: View {
                         .foregroundStyle(item.isDone ? Color.green : item.kind.color)
                 }
                 .buttonStyle(.plain)
+                .help(item.isDone ? "Mark as not done" : "Mark as done")
             } else {
                 Image(systemName: item.kind.symbol).font(.system(size: 13)).foregroundStyle(item.kind.color).frame(width: 15)
             }
@@ -721,7 +722,7 @@ struct ItemInspector: View {
                     Label(item.kind.label, systemImage: item.kind.symbol).foregroundStyle(item.kind.color).font(.system(size: 12, weight: .semibold))
                     Spacer()
                     ExportMenu(library: library, label: "Send") { Exporter.export(current, githubRepo: githubRepo) }
-                    Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                    Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Close")
                 }
                 TextField("Title", text: $title, axis: .vertical)
                     .textFieldStyle(.plain)

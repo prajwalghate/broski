@@ -169,18 +169,15 @@ final class HomeModel: ObservableObject {
         attach(panel.urls)
     }
 
-    /// A screenshot of a region you pick (Esc cancels), attached to the next message.
+    /// A screenshot for the next message: this window steps aside, then click a window or drag an area (Esc cancels).
     func takeScreenshot() {
-        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Screenshot \(stamp).png")
-        Task.detached { [weak self] in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            process.arguments = ["-i", "-x", url.path]
-            try? process.run()
-            process.waitUntilExit()
-            guard FileManager.default.fileExists(atPath: url.path) else { return }
-            await MainActor.run { self?.attach([url]) }
+        Task {
+            switch await Screenshot.capture() {
+            case .image(let url): attach([url])
+            case .cancelled: break
+            case .needsPermission: problem = "Turn on Broski in System Settings › Privacy & Security › Screen Recording, then restart Broski."
+            case .failed(let message): problem = "Screenshot failed: \(message)"
+            }
         }
     }
 
@@ -804,7 +801,7 @@ struct HomeView: View {
                 Button { model.chooseFiles() } label: { Image(systemName: "paperclip") }
                     .buttonStyle(.borderless).help("Share files: kept in the project's resources")
                 Button { model.takeScreenshot() } label: { Image(systemName: "camera.viewfinder") }
-                    .buttonStyle(.borderless).help("Screenshot a region and share it")
+                    .buttonStyle(.borderless).help("Screenshot: this window steps aside; click a window or drag an area (Esc cancels)")
                 TextField("Talk to Broski, or type “note: …”", text: $model.draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))

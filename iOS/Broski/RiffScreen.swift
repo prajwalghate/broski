@@ -349,6 +349,7 @@ struct RiffScreen: View {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
+                    .accessibilityLabel("More")
                 }
             }
         }

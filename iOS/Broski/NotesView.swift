@@ -239,6 +239,7 @@ struct ItemDetail: View {
                         dismiss()
                     } label: { Label("Delete", systemImage: "trash") }
                 } label: { Image(systemName: "ellipsis.circle") }
+                .accessibilityLabel("More")
             }
         }
         .fullScreenCover(item: $zoomed) { url in
@@ -248,6 +249,7 @@ struct ItemDetail: View {
                 Button { zoomed = nil } label: {
                     Image(systemName: "xmark.circle.fill").font(.largeTitle).foregroundStyle(.white, .black.opacity(0.5))
                 }
+                .accessibilityLabel("Close")
                 .padding()
             }
         }

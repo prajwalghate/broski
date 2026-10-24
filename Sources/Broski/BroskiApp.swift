@@ -41,6 +41,8 @@ enum BroskiApp {
             _exit(0)
         }
 
+        // Tooltips after 0.4 s instead of macOS's 1.5 s, so hovering an icon says what it does (Broski only).
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 400])
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
