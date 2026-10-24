@@ -12,6 +12,7 @@ hold ⌥⇧B  →  "in the strado project, add a todo: rotate the API keys"  →
 
 - **One conversation that remembers (0.9).**
   - **⌥⇧B** on the Mac or the **Talk** tab on the iPhone: the same conversation on both, kept as plain files (`conversations/<month>/<day>.<device>.jsonl`). Share screenshots, photos, PDFs and links; they're kept in the project's `resources/`.
+  - **Links you share are read.** Broski opens the page on your device (pages drawn by JavaScript in a hidden browser that keeps no cookies), keeps a copy in the project's resources, and sends its text with your message, fenced as data: about half a cent for an average page on Sonnet. "Read the docs at …" or "go through …" reads up to 10 pages of the site, with repeated menus sent once. Pages behind a login can't be read; Settings › Models › Links turns it off.
   - Broski recalls your notes, older conversation and each project's standing decisions, and cites them ("on Oct 21 you decided…"). A newer decision replaces an older one instead of mixing with it.
   - Decisions, todos and bugs come back as a **save card**: nothing is saved until you tap Save, or say "note: …".
   - "**Go private**" starts a blank slate that reads and keeps nothing; when you leave, keep it or let it go.

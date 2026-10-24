@@ -80,6 +80,9 @@ enum Diagnostics {
         if let i = args.firstIndex(of: "--converse"), i + 1 < args.count { return runConverse(args[i + 1], note: note) }
         if args.contains("--reflect") { return runReflect(note: note) }
         if args.contains("--first-run") { return runFirstRun(note: note) }
+        if let i = args.firstIndex(of: "--read-link"), i + 1 < args.count {
+            return runReadLink(args[i + 1], reply: !args.contains("--no-reply"), note: note)
+        }
         if let i = args.firstIndex(of: "--new-pack"), i + 1 < args.count { return runNewPack(args[i + 1], note: note) }
         if args.contains("--brain") { return runBrain(note: note) }
         if let i = args.firstIndex(of: "--ask") { return runAsk(Array(args.dropFirst(i + 1)), note: note) }
@@ -282,6 +285,50 @@ enum Diagnostics {
             done.signal()
         }
         while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
+    /// `--read-link "<what you'd say, with a link>" [--no-reply]`: reads the message's links as the conversation does
+    /// (rendering JavaScript pages, a site's pages when asked), in a throwaway folder; then one real reply with your key.
+    static func runReadLink(_ text: String, reply: Bool, note: @escaping (String) -> Void) {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-link-\(UUID().uuidString)", isDirectory: true)
+        let gateway = ModelGateway(settings: .defaults, root: root, device: "mac") { id in id == "claude" ? Secrets.get(Secrets.claudeKey) : nil }
+        let links = Resources.links(in: text)
+        let site = WebReader.wantsSite(text)
+        note("links: \(links.map(\.absoluteString).joined(separator: ", ")) · site: \(site)")
+        var done = false
+        Task { @MainActor in
+            let started = Date()
+            let outcome = await WebReader.readAll(Array(links.prefix(3)), site: site, project: "demo", root: root, keep: true,
+                                                  render: { await WebRenderer.render($0) }) { status in note(status) }
+            note(String(format: "read in %.1fs", Date().timeIntervalSince(started)))
+            for line in outcome.notes { note("note: \(line.text) \(line.files)") }
+            for part in outcome.parts {
+                if case .text(let body) = part {
+                    note("part: \(body.count) chars, about \(body.count / 4) tokens: \(body.prefix(300).replacingOccurrences(of: "\n", with: " ⏎ "))")
+                } else {
+                    note("part: \(part)".prefix(120) + "")
+                }
+            }
+            if reply {
+                let turn = Turn(device: "mac", speaker: .you, text: text)
+                let request = ConversationContext.build(aboutYou: nil, page: nil, project: nil, turns: [turn], isPrivate: false,
+                                                        attachments: outcome.parts)
+                do {
+                    let (answer, route) = try await gateway.send(request, role: .everyday, project: nil)
+                    note("reply via \(route.model): \(answer.text)")
+                    let spent = UsageLog.entries(root: root)
+                    note(String(format: "input %d tokens, output %d, $%.4f", spent.first?.usage.input ?? 0, spent.first?.usage.output ?? 0,
+                                spent.reduce(0) { $0 + $1.usd }))
+                } catch {
+                    note("reply failed: \(error.localizedDescription)")
+                }
+            }
+            try? FileManager.default.removeItem(at: root)
+            note("done")
+            done = true
+        }
+        while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     }
 
     static func runTranscribe(_ files: [String], note: @escaping (String) -> Void) {

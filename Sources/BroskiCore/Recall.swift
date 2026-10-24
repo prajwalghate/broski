@@ -59,6 +59,7 @@ public enum Recall {
         case "you": return "You said · \(date)"
         case "broski": return "Broski said · \(date)"
         case "decision": return "Decision · \(date)"
+        case "web": return "Page · \(date) · \(ref.title.prefix(60))"
         default: return "\(ref.kind.rawValue.capitalized) · \(date) · \(ref.title.prefix(60))"
         }
     }

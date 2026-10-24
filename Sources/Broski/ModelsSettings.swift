@@ -65,6 +65,13 @@ struct ModelsSettings: View {
             } footer: {
                 Text("Anything that speaks the OpenAI API works: Ollama (http://localhost:11434/v1), LM Studio (http://localhost:1234/v1), llama.cpp, vLLM, OpenRouter. Keys stay on this Mac.")
             }
+            Section {
+                Toggle("Read links I share", isOn: app.binding(\.readLinks))
+            } header: {
+                Text("Links")
+            } footer: {
+                Text("Broski opens the page on this Mac, keeps a copy in the project's resources, and sends its text with your message: about 2,500 tokens for an average page (half a cent on Sonnet), at most about 15,000. Say “read the docs at …” or “go through …” to read up to 10 pages of a site. Pages behind a login can't be read.")
+            }
             Section("Spending") {
                 LabeledContent("Today") { Text(Self.dollars(summary.today)) }
                 LabeledContent("This month") { Text(Self.dollars(summary.month)) }

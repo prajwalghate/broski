@@ -11,6 +11,8 @@ final class HomeModel: ObservableObject {
     @Published private(set) var turns: [Turn] = []
     @Published var draft = ""
     @Published private(set) var thinking = false
+    /// "Reading example.com…" while links you shared are being opened.
+    @Published private(set) var reading: String?
     @Published private(set) var isPrivate = false
     /// Leaving private mode after saying something: keep it, or let it go.
     @Published var askKeep = false
@@ -147,7 +149,31 @@ final class HomeModel: ObservableObject {
         if !isPrivate, !links.isEmpty {
             try? Resources.record(links: links, project: project, turn: turn.id, root: root, device: "mac")
         }
-        reply(attachments: isPrivate ? Resources.parts(forFiles: files) : Resources.parts(for: stored, root: root))
+        let shared = isPrivate ? Resources.parts(forFiles: files) : Resources.parts(for: stored, root: root)
+        let toRead = config().readLinks ? Array(links.prefix(3)) : []
+        guard !toRead.isEmpty else { return reply(attachments: shared) }
+        read(toRead, site: WebReader.wantsSite(text), then: shared)
+    }
+
+    /// Opens the links you shared on this Mac (a site's pages when you asked for the site), keeps copies with the
+    /// project, then replies with the pages' text.
+    private func read(_ urls: [URL], site: Bool, then shared: [ModelPart]) {
+        thinking = true
+        let (project, root, wasPrivate) = (project, root, isPrivate)
+        task = Task {
+            let outcome = await WebReader.readAll(urls, site: site, project: project, root: root, keep: !wasPrivate,
+                                                  render: { await WebRenderer.render($0) }) { [unowned self] status in
+                // The home model lives as long as the app.
+                await MainActor.run { self.reading = status }
+            }
+            reading = nil
+            thinking = false
+            guard wasPrivate == isPrivate, !Task.isCancelled else { return }
+            for note in outcome.notes {
+                add(Turn(device: "mac", speaker: .note, text: note.text, files: note.files.isEmpty ? nil : note.files, project: project))
+            }
+            reply(attachments: shared + outcome.parts)
+        }
     }
 
     // MARK: Attachments
@@ -259,7 +285,8 @@ final class HomeModel: ObservableObject {
         let shown = Set(turns.map(\.id))
         let older = store.recent(3000).filter { !shown.contains($0.id) }
         let decisions = ([nil] + library.projectNames.map(Optional.some)).flatMap { DecisionLog.current(root: root, project: $0) }
-        let index = NotesIndex(library.index.refs + Recall.refs(turns: older, root: root) + Recall.refs(decisions: decisions, root: root))
+        let index = NotesIndex(library.index.refs + Recall.refs(turns: older, root: root) + Recall.refs(decisions: decisions, root: root)
+                               + Recall.refs(webPages: WebReader.saved(root: root), root: root))
         recallIndex = index
         return index
     }
@@ -637,7 +664,7 @@ struct HomeView: View {
                     if model.thinking {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
-                            Text(model.deep ? "Thinking harder…" : "Thinking…").foregroundStyle(.secondary)
+                            Text(model.reading ?? (model.deep ? "Thinking harder…" : "Thinking…")).foregroundStyle(.secondary)
                         }
                         .font(.system(size: 12)).id("thinking")
                     }
@@ -684,9 +711,17 @@ struct HomeView: View {
                 Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
             }
         case .note:
-            Label(turn.text, systemImage: "checkmark")
-                .font(.system(size: 12)).foregroundStyle(.green)
-                .padding(.leading, 34)
+            let failed = turn.text.hasPrefix("Couldn't")
+            HStack(spacing: 8) {
+                Label(turn.text, systemImage: failed ? "exclamationmark.triangle" : "checkmark")
+                    .font(.system(size: 12)).foregroundStyle(failed ? Color.orange : Color.green)
+                if let file = turn.files?.first {
+                    Button("Open copy") { model.open(file: file) }
+                        .buttonStyle(.borderless).font(.system(size: 11))
+                        .help("The copy Broski kept in the project's resources")
+                }
+            }
+            .padding(.leading, 34)
         case .you:
             VStack(alignment: .trailing, spacing: 6) {
                 HStack {

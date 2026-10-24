@@ -10,6 +10,8 @@ final class PhoneHome: ObservableObject {
     @Published private(set) var turns: [Turn] = []
     @Published var draft = ""
     @Published private(set) var thinking = false
+    /// "Reading example.com…" while links you shared are being opened.
+    @Published private(set) var reading: String?
     @Published private(set) var isPrivate = false
     /// Leaving private mode after saying something: keep it, or let it go.
     @Published var askKeep = false
@@ -109,7 +111,32 @@ final class PhoneHome: ObservableObject {
         if !isPrivate, !links.isEmpty {
             try? Resources.record(links: links, project: project, turn: turn.id, root: store.root, device: "iphone")
         }
-        reply(attachments: isPrivate ? Resources.parts(forFiles: files) : Resources.parts(for: stored, root: store.root))
+        let shared = isPrivate ? Resources.parts(forFiles: files) : Resources.parts(for: stored, root: store.root)
+        let toRead = store.readLinks ? Array(links.prefix(3)) : []
+        guard !toRead.isEmpty else { return reply(attachments: shared) }
+        read(toRead, site: WebReader.wantsSite(text), then: shared)
+    }
+
+    /// Opens the links you shared on this iPhone (a site's pages when you asked for the site), keeps copies with the
+    /// project, then replies with the pages' text.
+    private func read(_ urls: [URL], site: Bool, then shared: [ModelPart]) {
+        thinking = true
+        let (project, root, wasPrivate) = (project, store.root, isPrivate)
+        task = Task {
+            let outcome = await WebReader.readAll(urls, site: site, project: project, root: root, keep: !wasPrivate,
+                                                  render: { await WebRenderer.render($0) }) { [unowned self] status in
+                // The conversation model lives as long as the app.
+                await MainActor.run { self.reading = status }
+            }
+            reading = nil
+            thinking = false
+            guard wasPrivate == isPrivate, !Task.isCancelled else { return }
+            for note in outcome.notes {
+                add(Turn(device: "iphone", speaker: .note, text: note.text, files: note.files.isEmpty ? nil : note.files, project: project))
+            }
+            store.reload()
+            reply(attachments: shared + outcome.parts)
+        }
     }
 
     /// Words from the mic: into the box, and sent.
@@ -144,7 +171,8 @@ final class PhoneHome: ObservableObject {
         let shown = Set(turns.map(\.id))
         let older = conversation.recent(3000).filter { !shown.contains($0.id) }
         let decisions = ([nil] + store.projects.map(Optional.some)).flatMap { DecisionLog.current(root: store.root, project: $0) }
-        let index = NotesIndex(store.index.refs + Recall.refs(turns: older, root: store.root) + Recall.refs(decisions: decisions, root: store.root))
+        let index = NotesIndex(store.index.refs + Recall.refs(turns: older, root: store.root) + Recall.refs(decisions: decisions, root: store.root)
+                               + Recall.refs(webPages: WebReader.saved(root: store.root), root: store.root))
         recallIndex = index
         return index
     }
@@ -404,7 +432,7 @@ struct TalkScreen: View {
                             }
                             ForEach(model.visibleTurns) { turn in row(turn).id(turn.id) }
                             if model.thinking {
-                                HStack(spacing: 8) { ProgressView(); Text("Thinking…").foregroundStyle(.secondary) }.font(.callout)
+                                HStack(spacing: 8) { ProgressView(); Text(model.reading ?? "Thinking…").foregroundStyle(.secondary) }.font(.callout)
                             }
                             if let card = model.card { cardView(card) }
                             if let proposal = model.proposal { proposalView(proposal) }
@@ -527,7 +555,8 @@ struct TalkScreen: View {
             }
             .frame(maxWidth: .infinity, alignment: turn.speaker == .you ? .trailing : .leading)
         case .note:
-            Label(turn.text, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.secondary)
+            Label(turn.text, systemImage: turn.text.hasPrefix("Couldn't") ? "exclamationmark.triangle" : "checkmark.circle")
+                .font(.footnote).foregroundStyle(turn.text.hasPrefix("Couldn't") ? Color.orange : Color.secondary)
         case .topic:
             Text(turn.text.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity).padding(.top, 6)
