@@ -5,7 +5,7 @@ import Speech
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable {
-    case general, projects, voice, ai, companion, connections, about
+    case general, projects, voice, ai, models, companion, connections, about
 }
 
 struct SettingsView: View {
@@ -24,7 +24,7 @@ struct SettingsView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 560)
+            .frame(width: 600)
             .padding(.top, 12)
             .padding(.bottom, 4)
             switch tab {
@@ -32,12 +32,13 @@ struct SettingsView: View {
             case .projects: ProjectSettings(app: app)
             case .voice: VoiceSettings(app: app)
             case .ai: AISettings(app: app, brain: app.brain)
+            case .models: ModelsSettings(app: app)
             case .companion: CompanionSettings(app: app)
             case .connections: ConnectionSettings(app: app)
             case .about: AboutSettings(app: app)
             }
         }
-        .frame(width: 600, height: 500)
+        .frame(width: 640, height: 520)
     }
 }
 
@@ -45,6 +46,7 @@ extension SettingsTab {
     var title: String {
         switch self {
         case .ai: return "AI"
+        case .models: return "Models"
         case .companion: return "Companion"
         case .connections: return "Connections"
         case .general: return "General"

@@ -115,7 +115,7 @@ enum Snapshots {
             render(OnboardingView(app: app, step: step), size: NSSize(width: 640, height: 560), to: folder, "onboarding-\(step)")
         }
         for tab in SettingsTab.allCases {
-            render(SettingsView(app: app, tab: tab), size: NSSize(width: 620, height: 560), to: folder, "settings-\(tab.rawValue)")
+            render(SettingsView(app: app, tab: tab), size: NSSize(width: 660, height: 580), to: folder, "settings-\(tab.rawValue)")
         }
     }
 
@@ -221,6 +221,28 @@ enum Snapshots {
         try? DecisionLog.record(Decision(device: "mac", project: "strado", text: "Paper-trade one week before real money", replaces: first.id), root: app.root)
         app.memoryModel.reload()
         render(MemoryView(model: app.memoryModel), size: NSSize(width: 560, height: 480), to: folder, "memory")
+        // Reflection's log: one change undone, one standing.
+        try? Reflection.apply(Reflection.Proposal(remember: [.init(text: "Reads replies on the phone between meetings", why: "Oct 24: said so while planning strado")],
+                                                  forget: [.init(text: "Prefers short, direct answers", why: "Oct 24: asked for fuller explanations")]),
+                              root: app.root, device: "mac", at: Date().addingTimeInterval(-3600))
+        if let dropped = Reflection.log(root: app.root).first(where: { $0.op == "forget" }) { try? Reflection.undo(dropped, root: app.root, device: "mac") }
+        try? Reflection.saveState(.init(lastRun: Date().addingTimeInterval(-3600), through: Date().addingTimeInterval(-3700)), root: app.root)
+        app.memoryModel.reload()
+        render(MemoryView(model: app.memoryModel, tab: 2), size: NSSize(width: 560, height: 480), to: folder, "memory-reflection")
+
+        // Models with a local server added and a month of spending.
+        var models = ModelSettings.defaults
+        models.add(ModelProvider(id: "ollama", kind: .openAICompatible, baseURL: "http://localhost:11434/v1", local: true))
+        models.set(.everyday, to: ModelChoice(provider: "ollama", model: "qwen2.5:7b"), local: true)
+        models.dailyLimitUSD = 2
+        let saved = app.config.models
+        app.update { $0.models = models }
+        for (days, model, tokens) in [(0.0, ClaudeModel.brain, 40_000), (0, ClaudeModel.fast, 90_000), (2, ClaudeModel.deep, 30_000), (0, "qwen2.5:7b", 12_000)] {
+            try? UsageLog.append(UsageLog.Entry(at: Date().addingTimeInterval(-days * 86_400), device: "mac", role: .everyday, provider: "claude",
+                                                model: model, project: nil, usage: ModelUsage(input: tokens, output: tokens / 10)), root: app.root)
+        }
+        render(ModelsSettings(app: app).frame(width: 640, height: 1180), size: NSSize(width: 640, height: 1180), to: folder, "settings-models-filled")
+        app.update { $0.models = saved }
 
         let call = CallModel(library: library, brain: app.brain, transcription: app.transcription)
         var transcript = CallTranscript(started: Date().addingTimeInterval(-754))

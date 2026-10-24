@@ -99,7 +99,12 @@ final class MemoryModel: ObservableObject {
 
 struct MemoryView: View {
     @ObservedObject var model: MemoryModel
-    @State private var tab = 0
+    @State private var tab: Int
+
+    init(model: MemoryModel, tab: Int = 0) {
+        self.model = model
+        _tab = State(initialValue: tab)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -183,7 +188,7 @@ struct MemoryView: View {
                     .frame(width: 56, alignment: .leading)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.text).font(.system(size: 13)).strikethrough(entry.undone).foregroundStyle(entry.undone ? .secondary : .primary)
-                    Text("\(Recall.dayString(entry.at)) · \(entry.why.isEmpty ? "no reason given" : entry.why)\(entry.undone ? " · undone" : "")")
+                    Text((entry.why.isEmpty ? "Reflected \(Recall.dayString(entry.at))" : entry.why) + (entry.undone ? " · undone" : ""))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()

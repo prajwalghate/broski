@@ -108,6 +108,44 @@ public struct ModelSettings: Codable, Equatable, Sendable {
                 .deep: ModelChoice(provider: "claude", model: ClaudeModel.deep)])
 
     public func provider(_ id: String) -> ModelProvider? { providers.first { $0.id == id } }
+
+    /// An id for a new provider from its name ("LM Studio" → "lm-studio"), never one already taken.
+    public func newID(for name: String) -> String {
+        let words = name.lowercased().split { !$0.isLetter && !$0.isNumber }
+        let base = words.isEmpty ? "model" : words.joined(separator: "-")
+        var id = base
+        var n = 2
+        // "claude" is Claude's own: its key is the Claude key.
+        while provider(id) != nil || id == "claude" {
+            id = "\(base)-\(n)"
+            n += 1
+        }
+        return id
+    }
+
+    /// Adds the provider, or replaces the one with its id.
+    public mutating func add(_ provider: ModelProvider) {
+        if let i = providers.firstIndex(where: { $0.id == provider.id }) { providers[i] = provider } else { providers.append(provider) }
+    }
+
+    /// Removes the provider and every role it had.
+    public mutating func remove(_ id: String) {
+        providers.removeAll { $0.id == id }
+        roles = roles.filter { $0.value.provider != id }
+        localRoles = localRoles.filter { $0.value.provider != id }
+    }
+
+    /// Sets a role's model. False when the provider isn't there, or (for `local`) doesn't run on this device.
+    @discardableResult
+    public mutating func set(_ role: ModelRole, to choice: ModelChoice, local: Bool) -> Bool {
+        guard let provider = provider(choice.provider), !choice.model.isEmpty, !local || provider.isLocal else { return false }
+        if local { localRoles[role] = choice } else { roles[role] = choice }
+        return true
+    }
+
+    public mutating func clear(_ role: ModelRole, local: Bool) {
+        if local { localRoles[role] = nil } else { roles[role] = nil }
+    }
 }
 
 // MARK: Router
@@ -345,6 +383,30 @@ public struct OpenAICompatibleConnector: ModelConnector {
         self.apiKey = apiKey
     }
 
+    static func modelsURL(_ base: String) -> URL? {
+        var trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        return URL(string: trimmed + "/models")
+    }
+
+    /// The model ids in a `/models` reply, sorted.
+    static func parseModels(_ data: Data) -> [String] {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let list = object["data"] as? [[String: Any]] else { return [] }
+        return list.compactMap { $0["id"] as? String }.sorted()
+    }
+
+    /// What the server at `base` offers (Ollama, LM Studio, llama.cpp, vLLM, OpenRouter all answer `/models`).
+    public static func models(base: String, apiKey: String?) async throws -> [String] {
+        guard let url = modelsURL(base) else { throw ModelFailure.unavailable("That address isn't a URL.") }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        if let apiKey, !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else { throw ModelFailure.unavailable("The server answered \(status).") }
+        return parseModels(data)
+    }
+
     public static func body(for request: ModelRequest, model: String) -> [String: Any] {
         var messages: [[String: Any]] = [["role": "system", "content": request.system]]
         for message in request.messages {
@@ -481,6 +543,33 @@ public enum UsageLog {
         let folder = root.appendingPathComponent("usage", isDirectory: true)
         let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
         return files.filter { $0.pathExtension == "jsonl" }.flatMap { JSONLines.read(Entry.self, from: $0) }.sorted { $0.at < $1.at }
+    }
+
+    public struct Summary: Equatable, Sendable {
+        public struct Line: Equatable, Sendable {
+            public var model: String
+            public var calls: Int
+            public var usd: Double
+        }
+
+        public var today: Double
+        public var month: Double
+        /// This month by model, most spent first.
+        public var byModel: [Line]
+
+        public static let none = Summary(today: 0, month: 0, byModel: [])
+    }
+
+    /// Today, this calendar month, and this month by model, every device together.
+    public static func summary(_ entries: [Entry], now: Date = Date()) -> Summary {
+        let calendar = Calendar.current
+        let month = entries.filter { calendar.isDate($0.at, equalTo: now, toGranularity: .month) }
+        let today = month.filter { calendar.isDate($0.at, inSameDayAs: now) }.reduce(0) { $0 + $1.usd }
+        let lines = Dictionary(grouping: month, by: \.model).map { model, all in
+            Summary.Line(model: model, calls: all.count, usd: all.reduce(0) { $0 + $1.usd })
+        }
+        return Summary(today: today, month: month.reduce(0) { $0 + $1.usd },
+                       byModel: lines.sorted { $0.usd == $1.usd ? $0.model < $1.model : $0.usd > $1.usd })
     }
 
     /// Spend on the calendar day of `day`, every device together.
