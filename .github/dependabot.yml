@@ -1,0 +1,11 @@
+# Weekly update checks for the CI actions and the Swift packages (whisper.cpp is pinned by checksum in Package.swift).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly

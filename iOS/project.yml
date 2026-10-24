@@ -1,0 +1,68 @@
+# The iPhone app. Generate the Xcode project with `xcodegen` in this folder; build with scripts/phone.sh.
+# Your bundle ID and Apple team come from the environment (iOS/Local.env, never committed; see Local.env.example).
+name: BroskiPhone
+options:
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  Broski:
+    path: ..
+targets:
+  BroskiPhone:
+    type: application
+    platform: iOS
+    sources: [Broski, Shared]
+    dependencies:
+      - package: Broski
+        product: BroskiCore
+      - package: Broski
+        product: BroskiBark
+      - target: BroskiWidgets
+    info:
+      path: Broski/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
+            CFBundleURLSchemes: [broski]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${BROSKI_BUNDLE_ID}
+        PRODUCT_NAME: Broski
+        DEVELOPMENT_TEAM: ${BROSKI_TEAM_ID}
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: 0.5.0
+        CURRENT_PROJECT_VERSION: 5
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: Broski
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UIFileSharingEnabled: YES
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Broski records what you say while you talk to it and turns it into text on your iPhone."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Broski turns what you say into notes, on your iPhone when it can."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Take a photo to attach to a note."
+  BroskiWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources: [BroskiWidgets, Shared]
+    info:
+      path: BroskiWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Broski
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${BROSKI_BUNDLE_ID}.widgets
+        PRODUCT_NAME: BroskiWidgets
+        DEVELOPMENT_TEAM: ${BROSKI_TEAM_ID}
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: 0.5.0
+        CURRENT_PROJECT_VERSION: 5
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
