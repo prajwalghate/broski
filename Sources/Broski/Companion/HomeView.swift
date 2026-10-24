@@ -91,6 +91,9 @@ final class HomeModel: ObservableObject {
 
     var modelLabel: String { deep ? "Deep" : "Everyday" }
 
+    /// Packs a new project can use: the built-ins (but core, which every project has) and your own.
+    var packs: [Pack] { Packs.all(root: root).filter { $0.id != "core" } }
+
     /// Nothing can answer yet: no Claude key, no local server, Apple's model not set up.
     var needsModel: Bool {
         !ModelSetup.ready(config().models ?? .defaults, claudeKey: Secrets.get(Secrets.claudeKey) != nil,
@@ -313,6 +316,19 @@ final class HomeModel: ObservableObject {
         case .switchProject(let name):
             project = name
             add(Turn(device: "mac", speaker: .topic, text: name, project: name))
+        case .newPack(let name):
+            let context = turns
+            let gateway = needsModel ? nil : self.gateway
+            thinking = true
+            Task {
+                defer { thinking = false }
+                do {
+                    let said = try await Packs.draft(name: name, context: context, gateway: gateway, root: root)
+                    add(Turn(device: "mac", speaker: .note, text: said, project: project))
+                } catch {
+                    problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
+            }
         case .connect(let path):
             guard let project else { return problem = "Pick the project first (the menu below), then connect its folder." }
             let folder = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
@@ -715,7 +731,7 @@ struct HomeView: View {
             if !proposal.summary.isEmpty { Text(proposal.summary).font(.system(size: 12)).foregroundStyle(.secondary) }
             HStack(spacing: 6) {
                 Text("Packs").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                ForEach(Packs.builtIn.filter { $0.id != "core" }, id: \.id) { pack in
+                ForEach(model.packs, id: \.id) { pack in
                     let on = proposal.packs.contains(pack.id)
                     Button(pack.name) {
                         if on { model.proposal?.packs.removeAll { $0 == pack.id } } else { model.proposal?.packs.append(pack.id) }

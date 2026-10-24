@@ -212,6 +212,19 @@ final class PhoneHome: ObservableObject {
             add(Turn(device: "iphone", speaker: .topic, text: name, project: name))
         case .connect:
             problem = "Folders are connected from the Mac: say it in the conversation there."
+        case .newPack(let name):
+            let context = turns
+            let gateway = canTalk ? self.gateway : nil
+            thinking = true
+            Task {
+                defer { thinking = false }
+                do {
+                    let said = try await Packs.draft(name: name, context: context, gateway: gateway, root: store.root)
+                    add(Turn(device: "iphone", speaker: .note, text: said, project: project))
+                } catch {
+                    problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
+            }
         }
     }
 

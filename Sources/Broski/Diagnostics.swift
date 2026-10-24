@@ -80,6 +80,7 @@ enum Diagnostics {
         if let i = args.firstIndex(of: "--converse"), i + 1 < args.count { return runConverse(args[i + 1], note: note) }
         if args.contains("--reflect") { return runReflect(note: note) }
         if args.contains("--first-run") { return runFirstRun(note: note) }
+        if let i = args.firstIndex(of: "--new-pack"), i + 1 < args.count { return runNewPack(args[i + 1], note: note) }
         if args.contains("--brain") { return runBrain(note: note) }
         if let i = args.firstIndex(of: "--ask") { return runAsk(Array(args.dropFirst(i + 1)), note: note) }
         if let i = args.firstIndex(of: "--companion"), i + 1 < args.count { return runCompanion(helper: args[i + 1], note: note) }
@@ -259,6 +260,25 @@ enum Diagnostics {
             }
             try? FileManager.default.removeItem(at: root)
             note("done")
+            done.signal()
+        }
+        while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
+    /// `--new-pack "<name>"`: drafts a pack with your key in a throwaway folder and prints it.
+    static func runNewPack(_ name: String, note: @escaping (String) -> Void) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-pack-\(UUID().uuidString)", isDirectory: true)
+        let gateway = ModelGateway(settings: .defaults, root: root, device: "mac") { id in id == "claude" ? Secrets.get(Secrets.claudeKey) : nil }
+        let context = [Turn(device: "mac", speaker: .you, text: "For my games I care about playtest sessions, build versions on Steam and the level list.")]
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            do {
+                note(try await Packs.draft(name: name, context: context, gateway: gateway, root: root))
+                note(try String(contentsOf: root.appendingPathComponent("packs/\(Packs.template(name: name).id).json"), encoding: .utf8))
+            } catch {
+                note("failed: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: root)
             done.signal()
         }
         while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }

@@ -125,6 +125,8 @@ public enum ConversationCommand: Equatable, Sendable {
     case switchProject(String)
     /// "connect ~/code/strado": a repo or folder for the current project.
     case connect(String)
+    /// "new pack: game dev": draft a pack of tracker sections and command-center widgets.
+    case newPack(String)
 
     public static func parse(_ text: String, catalog: ProjectCatalog?) -> ConversationCommand? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -140,6 +142,9 @@ public enum ConversationCommand: Equatable, Sendable {
         }
         if let path = capture(#"^(?:connect|link)\s+(?:the\s+)?(?:repo|folder|code)?\s*(?:at|in)?\s*([~/]\S*)$"#, in: trimmed) {
             return .connect(path)
+        }
+        if let name = capture(#"^(?:new pack\s*:?|(?:make|create|draft|start) a (?:new )?pack (?:for|called|named))\s+(.+?)[.!]?$"#, in: trimmed) {
+            return .newPack(name)
         }
         if let rest = capture(#"^remember(?:\s+that)?\s+(.+)$"#, in: trimmed) { return .remember(rest) }
         if let rest = capture(#"^forget(?:\s+that)?\s+(.+)$"#, in: trimmed) { return .forget(rest) }
