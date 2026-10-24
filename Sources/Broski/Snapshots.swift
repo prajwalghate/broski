@@ -184,6 +184,31 @@ enum Snapshots {
                                 ideas: ["Share a bot's results card as the referral link"], decisions: ["Reward is a free month of Pro"], todos: ["Draft the referral flow", "Check Stripe coupons for a free month"])
         render(RiffView(model: riff, voice: app.voice), size: NSSize(width: 520, height: 560), to: folder, "riff-wrap")
 
+        // The home conversation, read from the Broski folder the way the real one is (seeded once, both appearances).
+        let store = ConversationStore(root: app.root, device: "mac")
+        if store.recent(1).isEmpty {
+            let start = Date().addingTimeInterval(-600)
+            let seeded: [Turn] = [
+                Turn(at: start, device: "mac", speaker: .topic, text: "strado", project: "strado"),
+                Turn(at: start.addingTimeInterval(5), device: "mac", speaker: .you, text: "Should I run a week of paper trading before real money, or just start small?", project: "strado"),
+                Turn(at: start.addingTimeInterval(20), device: "mac", speaker: .broski, text: "Your notes say the stop-loss guard is still open, so I'd do the paper week, with a pass bar set before it starts. What would make you trust it?", project: "strado", model: "claude-sonnet-5-5"),
+                Turn(at: start.addingTimeInterval(60), device: "iphone", speaker: .you, text: "Paper week first. Pass bar: fills within 0.2% of the quote. The guard lands before that.", project: "strado"),
+                Turn(at: start.addingTimeInterval(80), device: "mac", speaker: .note, text: "Noted in strado: Replay the March crash day", project: "strado"),
+            ]
+            for turn in seeded { try? store.append(turn) }
+        }
+        let home = app.homeModel
+        home.reload()
+        home.card = SaveCard(project: "strado", items: [
+            .init(kind: .decision, title: "Paper-trade one week before real money; pass bar: fills within 0.2% of the quote"),
+            .init(kind: .todo, title: "Write the stop-loss guard before the paper week"),
+        ])
+        render(HomeView(model: home, voice: app.voice) {}, size: NSSize(width: 560, height: 700), to: folder, "home")
+        home.card = nil
+        home.goPrivate()
+        render(HomeView(model: home, voice: app.voice) {}, size: NSSize(width: 560, height: 420), to: folder, "home-private")
+        home.discardPrivate()
+
         let call = CallModel(library: library, brain: app.brain, transcription: app.transcription)
         var transcript = CallTranscript(started: Date().addingTimeInterval(-754))
         transcript.lines = [

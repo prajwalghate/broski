@@ -77,6 +77,7 @@ enum Diagnostics {
             return note("done")
         }
         if let i = args.firstIndex(of: "--transcribe") { return runTranscribe(Array(args[(i + 1)...]), note: note) }
+        if let i = args.firstIndex(of: "--converse"), i + 1 < args.count { return runConverse(args[i + 1], note: note) }
         if args.contains("--brain") { return runBrain(note: note) }
         if let i = args.firstIndex(of: "--ask") { return runAsk(Array(args.dropFirst(i + 1)), note: note) }
         if let i = args.firstIndex(of: "--companion"), i + 1 < args.count { return runCompanion(helper: args[i + 1], note: note) }
@@ -124,6 +125,38 @@ enum Diagnostics {
     /// What a button capture does: record through SpeechEngine (no live preview), then Whisper, then Broski's rules.
     /// `--transcribe <audio>...`: each file through the app's own transcriber, Bark then Whisper, with your project
     /// names as the vocabulary; then room noise, which must come out as nothing.
+    /// `--converse "<what you'd say>"`: one real turn through the model gateway with your key, then a save-card suggestion,
+    /// in a throwaway folder (nothing of yours is read or written). Prints the reply, the model, the cost and the card.
+    static func runConverse(_ text: String, note: @escaping (String) -> Void) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-converse-\(UUID().uuidString)", isDirectory: true)
+        let gateway = ModelGateway(settings: .defaults, root: root, device: "mac") { id in id == "claude" ? Secrets.get(Secrets.claudeKey) : nil }
+        let catalog = ProjectCatalog(projects: ["strado", "broski"].map { Project(name: $0) })
+        let turn = Turn(device: "mac", speaker: .you, text: text, project: "strado")
+        let request = ConversationContext.build(aboutYou: "Prefers short, direct answers.", page: nil, project: "strado", turns: [turn], isPrivate: false)
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            do {
+                let started = Date()
+                let (reply, route) = try await gateway.send(request, role: .everyday, project: "strado")
+                note(String(format: "reply via %@ in %.1fs: %@", route.model, Date().timeIntervalSince(started), reply.text))
+                let transcript = "User: \(text)\n\nBroski: \(reply.text)"
+                let ask = ModelRequest(system: SaveCard.instructions + "\n\nThe user's projects: strado, broski",
+                                       messages: [ModelMessage(role: .user, text: transcript)], maxTokens: 1500, schemaJSON: SaveCard.schemaJSON)
+                let (cardReply, cardRoute) = try await gateway.send(ask, role: .fast, project: "strado")
+                let card = SaveCard.parse(cardReply.text, catalog: catalog)
+                note("save card via \(cardRoute.model): " + (card.map { c in "\(c.project ?? "no project"): " + c.items.map { "\($0.kind.rawValue) \($0.title)" }.joined(separator: " | ") } ?? "nothing to save"))
+                let spent = UsageLog.entries(root: root)
+                note(String(format: "logged %d calls, $%.5f", spent.count, spent.reduce(0) { $0 + $1.usd }))
+            } catch {
+                note("failed: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: root)
+            note("done")
+            done.signal()
+        }
+        while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
     static func runTranscribe(_ files: [String], note: @escaping (String) -> Void) {
         let transcription = Transcription()
         var engine = "bark"

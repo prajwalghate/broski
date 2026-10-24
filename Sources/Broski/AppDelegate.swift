@@ -91,12 +91,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Shared by the menu bar and the floating button's right-click.
     private func quickMenu() -> NSMenu {
         let menu = NSMenu()
-        let note = item("New note", #selector(newNote))
-        if let parsed = HotKey.parse(app.config.hotkey) {
-            note.keyEquivalent = parsed.keyEquivalent
-            note.keyEquivalentModifierMask = parsed.flags
+        if app.config.conversationFirst {
+            menu.addItem(shortcutItem("Talk to Broski", #selector(talk), spec: app.config.hotkey))
+            menu.addItem(shortcutItem("Quick note", #selector(newNote), spec: app.config.noteHotkey))
+        } else {
+            menu.addItem(shortcutItem("New note", #selector(newNote), spec: app.config.hotkey))
         }
-        menu.addItem(note)
         let shot = item("Screenshot note", #selector(screenshotNote))
         if let parsed = HotKey.parse(app.config.screenshotHotkey) {
             shot.keyEquivalent = parsed.keyEquivalent
@@ -126,6 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let button = item("Floating Broski head", #selector(toggleButton))
         button.state = app.config.showFloatingButton ? .on : .off
         menu.addItem(button)
+        let door = item("Shortcut opens the conversation", #selector(toggleFrontDoor))
+        door.state = app.config.conversationFirst ? .on : .off
+        menu.addItem(door)
         let fn = item("Hold fn to talk", #selector(toggleFn))
         fn.state = app.config.fnHoldToTalk ? .on : .off
         menu.addItem(fn)
@@ -203,6 +206,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Actions
 
     @objc private func newNote() { app.capture.trigger(.shortcut) }
+    @objc private func talk() { app.showHome() }
+    @objc private func toggleFrontDoor() { app.update { $0.frontDoor = $0.conversationFirst ? "note" : "conversation" } }
     @objc private func clipSelection() { app.capture.clipSelection() }
     @objc private func askBroski() { app.showAsk(nil) }
     @objc private func helpWithThis() { app.companion.helpWithThis() }

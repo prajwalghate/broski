@@ -41,6 +41,11 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     /// Speech from a mic that closing Ask stopped: the next open keeps the question instead of wiping it.
     private var askKeepsDraft = false
     private lazy var riffModel = RiffModel(project: nil, library: library, brain: brain, voice: voice, speak: config.speakReplies)
+    private(set) lazy var homeModel: HomeModel = {
+        let model = HomeModel(root: root, library: library, voice: voice) { [weak self] in self?.config ?? .defaults }
+        model.onSpeakChange = { [weak self] on in self?.update { $0.speakReplies = on } }
+        return model
+    }()
     /// How many turns the riff had when it was last saved; turns added after (Back to the riff) are unsaved.
     private var riffSavedTurns = 0
     private var riffSaveWatch: AnyCancellable?
@@ -50,6 +55,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
 
     private var bubble: BubbleController?
     private var hotKey: HotKey?
+    /// Quick notes while the conversation is the front door.
+    private var noteHotKey: HotKey?
     private var screenshotHotKey: HotKey?
     private var clipHotKey: HotKey?
     private let services = BroskiServices()
@@ -291,7 +298,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
         capture.apply(config: new)
         capture.engine.voiceIsolation = new.voiceIsolation
-        if old.hotkey != new.hotkey { registerHotKey() }
+        if old.hotkey != new.hotkey || old.frontDoor != new.frontDoor || old.noteHotkey != new.noteHotkey { registerHotKey() }
         if old.fnHoldToTalk != new.fnHoldToTalk { applyFnKey() }
         if old.showFloatingButton != new.showFloatingButton {
             if new.showFloatingButton { makeBubble().setVisible(true) } else { bubble?.setVisible(false) }
@@ -331,14 +338,30 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         fnKey?.stop()
         fnKey = nil
         guard config.fnHoldToTalk else { return }
-        fnKey = FnKeyMonitor(onHold: { [weak self] in self?.capture.press(.fn) }, onRelease: { [weak self] in self?.capture.release(.fn) })
+        // Read at each press, so switching the front door needs no restart.
+        fnKey = FnKeyMonitor(onHold: { [weak self] in
+            guard let self else { return }
+            if self.config.conversationFirst { self.showHome(listening: true) } else { self.capture.press(.fn) }
+        }, onRelease: { [weak self] in
+            guard let self else { return }
+            if self.config.conversationFirst { self.homeModel.holdEnd() } else { self.capture.release(.fn) }
+        })
         Log.info("Hold fn to talk: on (accessibility \(ContextCapture.accessibilityAllowed ? "allowed" : "not allowed yet"))")
     }
 
     func registerHotKey() {
         hotKey = nil
-        hotKey = HotKey(spec: config.hotkey, released: { [weak self] in self?.capture.release(.shortcut) }) { [weak self] in
-            self?.capture.press(.shortcut)
+        noteHotKey = nil
+        if config.conversationFirst {
+            // The main shortcut opens the conversation; the note shortcut keeps the quick-note panel one key away.
+            hotKey = HotKey(spec: config.hotkey) { [weak self] in self?.showHome() }
+            noteHotKey = HotKey(spec: config.noteHotkey, released: { [weak self] in self?.capture.release(.shortcut) }) { [weak self] in
+                self?.capture.press(.shortcut)
+            }
+        } else {
+            hotKey = HotKey(spec: config.hotkey, released: { [weak self] in self?.capture.release(.shortcut) }) { [weak self] in
+                self?.capture.press(.shortcut)
+            }
         }
         if let hotKey {
             shortcutLabel = hotKey.display
@@ -480,6 +503,16 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             let text = await voice.stop(vocabulary: library.projectNames)
             if !text.isEmpty { keep(text) }
         }
+    }
+
+    /// The home conversation: the front door to Broski. `listening` starts the mic (fn held).
+    func showHome(listening: Bool = false) {
+        let fresh = windows["home"] == nil
+        showWindow("home", title: "Broski", size: NSSize(width: 560, height: 700), resizable: true) {
+            HomeView(model: self.homeModel, voice: self.voice) { [weak self] in self?.showDashboard() }
+        }
+        if fresh { homeModel.reload() }
+        if listening { homeModel.holdStart() }
     }
 
     /// Riff mode: think out loud about a project with Claude.
@@ -628,6 +661,12 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
               let id = windows.first(where: { $0.value === window })?.key else { return }
         windows[id] = nil
         // Ask's mic button can still stop the mic while Ask is open, and it may be Ask's dictation.
+        if id == "home" {
+            stopVoice { [weak self] text in
+                guard let self else { return }
+                self.homeModel.draft = TextTools.joinPhrase(self.homeModel.draft, text)
+            }
+        }
         if id == "riff", askPanel?.isVisible != true {
             stopVoice { [weak self] text in
                 guard let self else { return }

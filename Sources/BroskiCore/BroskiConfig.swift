@@ -59,6 +59,15 @@ public struct BroskiConfig: Codable, Equatable {
     public var speakReplies: Bool = false
     /// Names your trackers use for you ("sam", "founder"), so "waiting on you" finds what's yours.
     public var ownerAliases: [String] = []
+    /// What the main shortcut and fn open: "conversation" (talk to Broski) or "note" (the quick-note panel, as before).
+    public var frontDoor: String = "conversation"
+    /// The quick-note shortcut while the conversation is the front door.
+    public var noteHotkey: String = "option+shift+n"
+    /// Which model does what; nil means the defaults (Claude by role).
+    public var models: ModelSettings? = nil
+
+    /// The conversation opens on the main shortcut and fn.
+    public var conversationFirst: Bool { frontDoor != "note" }
 
     public static let defaults = BroskiConfig(
         showFloatingButton: false,
@@ -152,6 +161,9 @@ public struct BroskiConfig: Codable, Equatable {
         helpHotkey = (try? c.decodeIfPresent(String.self, forKey: .helpHotkey)) ?? d.helpHotkey
         speakReplies = (try? c.decodeIfPresent(Bool.self, forKey: .speakReplies)) ?? d.speakReplies
         ownerAliases = (try? c.decodeIfPresent([String].self, forKey: .ownerAliases)) ?? d.ownerAliases
+        frontDoor = (try? c.decodeIfPresent(String.self, forKey: .frontDoor)) ?? d.frontDoor
+        noteHotkey = (try? c.decodeIfPresent(String.self, forKey: .noteHotkey)) ?? d.noteHotkey
+        models = (try? c.decodeIfPresent(ModelSettings.self, forKey: .models)) ?? d.models
         if wakeWords.isEmpty { wakeWords = d.wakeWords }
         silenceSeconds = min(max(silenceSeconds, 0.8), 6)
     }
