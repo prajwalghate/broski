@@ -122,6 +122,11 @@ enum MCPServer {
              ["project": ["type": "string", "description": "Optional: a project, or \"inbox\""], "kind": ["type": "string", "enum": ["bug", "todo", "idea", "note"]]], []),
         tool("recent_notes", "Notes captured in the last few days, newest first.",
              ["days": ["type": "integer", "minimum": 1, "maximum": 90], "project": ["type": "string", "description": "Optional: a project, or \"inbox\""]], []),
+        tool("search_conversations", "Search what the user and Broski said in the home conversation (every device), newest first among the best matches.",
+             ["query": ["type": "string"], "project": ["type": "string"], "limit": ["type": "integer", "minimum": 1, "maximum": 30]], ["query"]),
+        tool("decisions", "Decisions the user saved, with dates: the ones standing now, and the ones a later decision replaced.",
+             ["project": ["type": "string", "description": "Optional: one project; default all"]], []),
+        tool("memory", "What Broski knows about the user: their about-you file and what they asked Broski to remember.", [:], []),
     ]
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], _ required: [String],
@@ -488,6 +493,35 @@ enum MCPServer {
             let recent = items.filter { $0.created >= since && where_.contains($0.project) }
                 .sorted { $0.created > $1.created }
             return (recent.isEmpty ? "Nothing in the last \(days) days." : recent.prefix(60).map(line).joined(separator: "\n") + more(recent.count, 60), false)
+
+        case "search_conversations":
+            guard let query = args["query"] as? String, !query.isEmpty else { return ("Give a query.", true) }
+            guard let where_ = scope(args["project"]) else { return unknown(args["project"]) }
+            let limit = min(max(args["limit"] as? Int ?? 10, 1), 30)
+            // Local-only projects never leave Broski, and neither does what was said about them.
+            let turns = ConversationStore(root: store.root, device: "mac").recent(5000)
+                .filter { !localOnly.contains($0.project ?? "") && where_.contains($0.project) }
+            let hits = NotesIndex(Recall.refs(turns: turns, root: store.root)).search(query, limit: limit)
+            guard !hits.isEmpty else { return ("Nothing in the conversation matches “\(query)”.", false) }
+            return (hits.map { hit in
+                "- [\(hit.ref.id)] \(hit.ref.source == "you" ? "user" : "broski") · \(day.string(from: hit.ref.date)) · \(hit.ref.project ?? "no project"): \(hit.ref.body.prefix(300))"
+            }.joined(separator: "\n"), false)
+
+        case "decisions":
+            guard let where_ = scope(args["project"]) else { return unknown(args["project"]) }
+            let names = ([nil] + projects.map(Optional.some)).filter { !localOnly.contains($0 ?? "") && where_.contains($0) }
+            let rows = names.flatMap { project -> [String] in
+                let all = DecisionLog.all(root: store.root, project: project)
+                let replaced = Dictionary(all.compactMap { d in d.replaces.map { ($0, d) } }, uniquingKeysWith: { first, _ in first })
+                return all.map { d in
+                    "- [\(d.id)] \(day.string(from: d.at)) · \(project ?? "Inbox"): \(d.text)"
+                        + (replaced[d.id].map { " (replaced \(day.string(from: $0.at)) by: \($0.text))" } ?? "")
+                }
+            }
+            return (rows.isEmpty ? "No decisions saved yet." : rows.joined(separator: "\n"), false)
+
+        case "memory":
+            return (Memory.aboutYou(root: store.root) ?? "Broski doesn't know anything about the user yet.", false)
 
         default:
             return ("Unknown tool \(name).", true)

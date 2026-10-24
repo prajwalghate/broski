@@ -203,11 +203,19 @@ enum Snapshots {
             .init(kind: .decision, title: "Paper-trade one week before real money; pass bar: fills within 0.2% of the quote"),
             .init(kind: .todo, title: "Write the stop-loss guard before the paper week"),
         ])
-        render(HomeView(model: home, voice: app.voice) {}, size: NSSize(width: 560, height: 700), to: folder, "home")
+        render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home")
         home.card = nil
         home.goPrivate()
-        render(HomeView(model: home, voice: app.voice) {}, size: NSSize(width: 560, height: 420), to: folder, "home-private")
+        render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 420), to: folder, "home-private")
         home.discardPrivate()
+
+        // What Broski knows, with a remembered fact and a decision that replaced an earlier one.
+        try? Memory.remember("Prefers short, direct answers", root: app.root, device: "mac")
+        let first = Decision(at: Date().addingTimeInterval(-3 * 86_400), device: "mac", project: "strado", text: "Start live with $500")
+        try? DecisionLog.record(first, root: app.root)
+        try? DecisionLog.record(Decision(device: "mac", project: "strado", text: "Paper-trade one week before real money", replaces: first.id), root: app.root)
+        app.memoryModel.reload()
+        render(MemoryView(model: app.memoryModel), size: NSSize(width: 560, height: 480), to: folder, "memory")
 
         let call = CallModel(library: library, brain: app.brain, transcription: app.transcription)
         var transcript = CallTranscript(started: Date().addingTimeInterval(-754))

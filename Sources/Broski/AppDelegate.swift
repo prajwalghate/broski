@@ -121,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let session = app.library.activeSession {
             menu.addItem(item("Wrap up “\(session.title)”", #selector(wrapUpSession)))
         }
+        menu.addItem(item("What Broski knows", #selector(openMemory)))
         menu.addItem(item("Open dashboard", #selector(openDashboard)))
         menu.addItem(.separator())
         let button = item("Floating Broski head", #selector(toggleButton))
@@ -232,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { await app.library.writeReport(for: session) }
     }
     @objc private func openDashboard() { app.showDashboard() }
+    @objc private func openMemory() { app.showMemory() }
     @objc private func openSettings() { app.showSettings() }
     @objc private func toggleButton() { app.update { $0.showFloatingButton.toggle() } }
     @objc private func togglePill() { app.update { $0.showPill.toggle() } }

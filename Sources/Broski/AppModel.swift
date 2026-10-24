@@ -511,10 +511,21 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     func showHome(listening: Bool = false) {
         let fresh = windows["home"] == nil
         showWindow("home", title: "Broski", size: NSSize(width: 560, height: 700), resizable: true) {
-            HomeView(model: self.homeModel, voice: self.voice) { [weak self] in self?.showDashboard() }
+            HomeView(model: self.homeModel, voice: self.voice, openDashboard: { [weak self] in self?.showDashboard() },
+                     openMemory: { [weak self] in self?.showMemory() })
         }
         if fresh { homeModel.reload() }
         if listening { homeModel.holdStart() }
+    }
+
+    private(set) lazy var memoryModel = MemoryModel(root: root, library: library)
+
+    /// What Broski knows about you, and every project's decisions.
+    func showMemory() {
+        showWindow("memory", title: "What Broski knows", size: NSSize(width: 560, height: 560), resizable: true) {
+            MemoryView(model: self.memoryModel)
+        }
+        memoryModel.reload()
     }
 
     /// Riff mode: think out loud about a project with Claude.

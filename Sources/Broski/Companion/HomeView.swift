@@ -18,6 +18,8 @@ final class HomeModel: ObservableObject {
     @Published var project: String?
     /// What's being discussed now ("launch plan"), from the review after each reply; stored on each turn.
     @Published private(set) var topic: String?
+    /// Showing one thread (a topic) instead of the whole conversation.
+    @Published var thread: String?
     @Published var card: SaveCard?
     @Published var problem: String?
     @Published var speak: Bool
@@ -53,7 +55,26 @@ final class HomeModel: ObservableObject {
         if topic == nil { topic = turns.last?.topic }
     }
 
-    var visibleTurns: [Turn] { isPrivate ? privateTurns : turns }
+    var visibleTurns: [Turn] {
+        if isPrivate { return privateTurns }
+        guard let thread else { return turns }
+        return turns.filter { $0.topic == thread }
+    }
+
+    /// Recent topics, newest first: each is a thread you can come back to.
+    var threads: [String] {
+        var seen: [String] = []
+        for turn in turns.reversed() {
+            if let topic = turn.topic, !seen.contains(topic) { seen.append(topic) }
+            if seen.count == 8 { break }
+        }
+        return seen
+    }
+
+    func show(thread: String?) {
+        self.thread = thread
+        if let thread { topic = thread }
+    }
 
     var modelLabel: String { deep ? "Deep" : "Everyday" }
 
@@ -372,6 +393,7 @@ struct HomeView: View {
     @ObservedObject var model: HomeModel
     @ObservedObject var voice: VoiceInput
     var openDashboard: () -> Void
+    var openMemory: () -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -407,6 +429,8 @@ struct HomeView: View {
             Toggle("Speak", isOn: Binding(get: { model.speak }, set: { model.speak = $0; model.onSpeakChange($0) }))
                 .toggleStyle(.switch).controlSize(.mini)
                 .help("Read Broski's replies aloud")
+            Button(action: openMemory) { Image(systemName: "book") }
+                .buttonStyle(.borderless).help("What Broski knows")
             Button(action: openDashboard) { Image(systemName: "square.grid.2x2") }
                 .buttonStyle(.borderless).help("Open the dashboard")
             Button { model.togglePrivate() } label: {
@@ -598,6 +622,19 @@ struct HomeView: View {
                 }
                 .menuStyle(.borderlessButton).fixedSize()
                 .help("The project this conversation is about")
+                if !model.threads.isEmpty && !model.isPrivate {
+                    Menu {
+                        Button("The whole conversation") { model.show(thread: nil) }
+                        Divider()
+                        ForEach(model.threads, id: \.self) { thread in
+                            Button(thread) { model.show(thread: thread) }
+                        }
+                    } label: {
+                        Text(model.thread.map { "Thread: \($0)" } ?? "All threads").font(.system(size: 11, weight: .medium))
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .help("Show one thread of the conversation")
+                }
                 Text("Return sends · hold fn to talk · “note: …” saves without a reply")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
