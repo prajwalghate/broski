@@ -131,20 +131,34 @@ enum Diagnostics {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-converse-\(UUID().uuidString)", isDirectory: true)
         let gateway = ModelGateway(settings: .defaults, root: root, device: "mac") { id in id == "claude" ? Secrets.get(Secrets.claudeKey) : nil }
         let catalog = ProjectCatalog(projects: ["strado", "broski"].map { Project(name: $0) })
+        // An older conversation and a standing decision, so recall, citations and replacing a decision are exercised.
+        let earlier = Turn(at: Date().addingTimeInterval(-4 * 86_400), device: "mac", speaker: .you,
+                           text: "For strado live trading, risk limit is max 2% of the account per position, always.", project: "strado")
+        let standing = Decision(at: Date().addingTimeInterval(-3 * 86_400), device: "mac", project: "strado", text: "Start strado live with $500")
+        try? ConversationStore(root: root, device: "mac").append(earlier)
+        try? DecisionLog.record(standing, root: root)
+        let index = NotesIndex(Recall.refs(turns: [earlier], root: root) + Recall.refs(decisions: [standing], root: root))
+        let recall = Recall.find(text, index: index, excluding: [], hidden: [])
+        note("recall: " + recall.map(\.label).joined(separator: " | "))
         let turn = Turn(device: "mac", speaker: .you, text: text, project: "strado")
-        let request = ConversationContext.build(aboutYou: "Prefers short, direct answers.", page: nil, project: "strado", turns: [turn], isPrivate: false)
+        let request = ConversationContext.build(aboutYou: "Prefers short, direct answers.", page: nil, project: "strado", turns: [turn],
+                                                isPrivate: false, decisions: DecisionLog.current(root: root, project: "strado"), recall: recall)
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             do {
                 let started = Date()
                 let (reply, route) = try await gateway.send(request, role: .everyday, project: "strado")
-                note(String(format: "reply via %@ in %.1fs: %@", route.model, Date().timeIntervalSince(started), reply.text))
-                let transcript = "User: \(text)\n\nBroski: \(reply.text)"
-                let ask = ModelRequest(system: SaveCard.instructions + "\n\nThe user's projects: strado, broski",
-                                       messages: [ModelMessage(role: .user, text: transcript)], maxTokens: 1500, schemaJSON: SaveCard.schemaJSON)
+                let (clean, sources) = Recall.cited(in: reply.text, hits: recall)
+                note(String(format: "reply via %@ in %.1fs: %@", route.model, Date().timeIntervalSince(started), clean))
+                note("cited: " + (sources.isEmpty ? "nothing" : sources.joined(separator: " | ")))
+                let transcript = "User: \(text)\n\nBroski: \(clean)"
+                let ask = ModelRequest(system: SaveCard.instructions + "\n\nThe user's projects: strado, broski\n\nCurrent decisions on strado:\n<decisions>\n- \(standing.text)\n</decisions>",
+                                       messages: [ModelMessage(role: .user, text: "<turns>\n\(transcript)\n</turns>")], maxTokens: 1500,
+                                       schemaJSON: SaveCard.schemaJSON)
                 let (cardReply, cardRoute) = try await gateway.send(ask, role: .fast, project: "strado")
-                let card = SaveCard.parse(cardReply.text, catalog: catalog)
-                note("save card via \(cardRoute.model): " + (card.map { c in "\(c.project ?? "no project"): " + c.items.map { "\($0.kind.rawValue) \($0.title)" }.joined(separator: " | ") } ?? "nothing to save"))
+                let review = SaveCard.review(cardReply.text, catalog: catalog, decisions: [standing])
+                note("review via \(cardRoute.model): project \(review?.project ?? "none"), topic \(review?.topic ?? "none")")
+                note("save card: " + (review?.card.map { c in c.items.map { "\($0.kind.rawValue) \($0.title)" + ($0.replaces == standing.id ? " (replaces the $500 decision)" : "") }.joined(separator: " | ") } ?? "nothing to save"))
                 let spent = UsageLog.entries(root: root)
                 note(String(format: "logged %d calls, $%.5f", spent.count, spent.reduce(0) { $0 + $1.usd }))
             } catch {

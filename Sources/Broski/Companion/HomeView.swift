@@ -16,6 +16,8 @@ final class HomeModel: ObservableObject {
     /// Replies come from the deep model.
     @Published var deep = false
     @Published var project: String?
+    /// What's being discussed now ("launch plan"), from the review after each reply; stored on each turn.
+    @Published private(set) var topic: String?
     @Published var card: SaveCard?
     @Published var problem: String?
     @Published var speak: Bool
@@ -30,6 +32,8 @@ final class HomeModel: ObservableObject {
     private var privateTurns: [Turn] = []
     private var task: Task<Void, Never>?
     private var store: ConversationStore { ConversationStore(root: root, device: "mac") }
+    /// Notes, decisions and past turns, searchable for recall; rebuilt when something new is saved or said.
+    private var recallIndex: NotesIndex?
 
     init(root: URL, library: Library, voice: VoiceInput, config: @escaping () -> BroskiConfig) {
         self.root = root
@@ -44,7 +48,9 @@ final class HomeModel: ObservableObject {
     func reload() {
         guard !thinking else { return }
         turns = store.recent(80)
+        recallIndex = nil
         if project == nil { project = turns.last(where: { $0.project != nil })?.project }
+        if topic == nil { topic = turns.last?.topic }
     }
 
     var visibleTurns: [Turn] { isPrivate ? privateTurns : turns }
@@ -71,7 +77,7 @@ final class HomeModel: ObservableObject {
         guard !text.isEmpty, !thinking else { return }
         draft = ""
         if let command = ConversationCommand.parse(text, catalog: library.catalog) { return run(command) }
-        add(Turn(device: "mac", speaker: .you, text: text, project: project))
+        add(Turn(device: "mac", speaker: .you, text: text, project: project, topic: topic))
         reply()
     }
 
@@ -81,6 +87,7 @@ final class HomeModel: ObservableObject {
             return
         }
         turns.append(turn)
+        recallIndex = nil
         do {
             try store.append(turn)
         } catch {
@@ -88,12 +95,29 @@ final class HomeModel: ObservableObject {
         }
     }
 
+    /// Your notes, every project's standing decisions and the conversation older than what's on screen.
+    private func recallSearch() -> NotesIndex {
+        if let recallIndex { return recallIndex }
+        let shown = Set(turns.map(\.id))
+        let older = store.recent(3000).filter { !shown.contains($0.id) }
+        let decisions = ([nil] + library.projectNames.map(Optional.some)).flatMap { DecisionLog.current(root: root, project: $0) }
+        let index = NotesIndex(library.index.refs + Recall.refs(turns: older, root: root) + Recall.refs(decisions: decisions, root: root))
+        recallIndex = index
+        return index
+    }
+
     private func reply() {
         let history = visibleTurns
+        let said = history.last(where: { $0.speaker == .you })?.text ?? ""
+        let localOnly = touchesLocalOnly(history.suffix(12).map(\.text).joined(separator: "\n"))
+        // Private starts blank; otherwise recall leaves out local-only projects unless this conversation stays local anyway.
+        let recall = isPrivate ? [] : Recall.find(said, index: recallSearch(), excluding: Set(history.map { "turn:\($0.id)" }),
+                                                   hidden: localOnly ? [] : localOnlyProjects)
+        let decisions = isPrivate ? [] : project.map { DecisionLog.current(root: root, project: $0) } ?? []
         let request = ConversationContext.build(aboutYou: isPrivate ? nil : Memory.aboutYou(root: root),
                                                 page: isPrivate ? nil : project.flatMap { library.pages[$0] },
-                                                project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate)
-        let localOnly = touchesLocalOnly(request.messages.map(\.text).joined(separator: "\n"))
+                                                project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
+                                                decisions: decisions, recall: recall)
         let role: ModelRole = deep ? .deep : .everyday
         let gateway = gateway
         let project = project
@@ -105,12 +129,13 @@ final class HomeModel: ObservableObject {
             do {
                 let (reply, route) = try await gateway.send(request, role: role, project: project, localOnly: localOnly)
                 guard wasPrivate == isPrivate else { return }
-                var sources: [String] = []
+                let (text, cited) = Recall.cited(in: reply.text, hits: recall)
+                var sources = cited
                 if route.overBudget { sources.append("Past today's limit: \(route.model)") }
                 if route.substituted { sources.append("On this Mac: \(route.model)") }
-                add(Turn(device: "mac", speaker: .broski, text: reply.text, project: project, model: route.model,
+                add(Turn(device: "mac", speaker: .broski, text: text, project: project, topic: topic, model: route.model,
                          sources: sources.isEmpty ? nil : sources))
-                if speak { say(reply.text) }
+                if speak { say(text) }
                 if !wasPrivate { suggestSave(force: false) }
             } catch {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -184,16 +209,30 @@ final class HomeModel: ObservableObject {
         let localOnly = touchesLocalOnly(transcript)
         // The model isn't told local-only projects exist, so it can't file anything into them.
         let known = library.projectNames.filter { !localOnlyProjects.contains($0) }
-        let request = ModelRequest(system: SaveCard.instructions + "\n\nThe user's projects: " + known.joined(separator: ", "),
-                                   messages: [ModelMessage(role: .user, text: transcript)], maxTokens: 1500,
-                                   schemaJSON: SaveCard.schemaJSON)
+        let standing = project.map { DecisionLog.current(root: root, project: $0) } ?? []
+        var system = SaveCard.instructions + "\n\nThe user's projects: " + known.joined(separator: ", ")
+        if !standing.isEmpty {
+            system += "\n\nCurrent decisions on \(project ?? ""):\n<decisions>\n" + standing.suffix(12).map { "- \($0.text)" }.joined(separator: "\n") + "\n</decisions>"
+        }
+        let request = ModelRequest(system: system, messages: [ModelMessage(role: .user, text: "<turns>\n\(transcript)\n</turns>")],
+                                   maxTokens: 1500, schemaJSON: SaveCard.schemaJSON)
         let gateway = gateway
         let project = project
         Task {
             do {
                 let (reply, _) = try await gateway.send(request, role: .fast, project: project, localOnly: localOnly)
-                if var found = SaveCard.parse(reply.text, catalog: library.catalog) {
-                    if found.project == nil { found.project = project }
+                guard let review = SaveCard.review(reply.text, catalog: library.catalog, decisions: standing) else {
+                    if force { problem = "Nothing in the last few turns to save." }
+                    return
+                }
+                // A conversation with no project yet is filed under the one it turned out to be about.
+                if self.project == nil, let found = review.project, !isPrivate {
+                    self.project = found
+                    add(Turn(device: "mac", speaker: .topic, text: found, project: found, topic: review.topic))
+                }
+                if let topic = review.topic { self.topic = topic }
+                if var found = review.card {
+                    if found.project == nil { found.project = self.project }
                     card = found
                 } else if force {
                     problem = "Nothing in the last few turns to save."
@@ -209,7 +248,7 @@ final class HomeModel: ObservableObject {
         var counts: [SaveCard.Entry.Kind: Int] = [:]
         do {
             for entry in card.items {
-                var tags = ["conversation"]
+                let tags = ["conversation"]
                 let kind: NoteKind
                 switch entry.kind {
                 case .note: kind = .note
@@ -217,8 +256,17 @@ final class HomeModel: ObservableObject {
                 case .todo: kind = .todo
                 case .bug: kind = .bug
                 case .decision:
-                    kind = .note
-                    tags.append("decision")
+                    let decision = Decision(device: "mac", project: card.project, text: entry.title,
+                                            body: entry.body.isEmpty ? nil : entry.body, replaces: entry.replaces,
+                                            turn: turns.last(where: { $0.speaker == .you })?.id)
+                    try DecisionLog.record(decision, root: root)
+                    if let project = card.project {
+                        try? ChangeStream.append([ChangeEvent(at: decision.at, project: project, source: "broski", kind: "decided",
+                                                              id: "\(project):decision/\(decision.id)", title: decision.text)],
+                                                 root: root, project: project)
+                    }
+                    counts[entry.kind, default: 0] += 1
+                    continue
                 }
                 _ = try library.store.create(ItemDraft(project: card.project, kind: kind, tags: tags, title: entry.title,
                                                        body: entry.body, context: ItemContext(app: "Broski conversation")))
