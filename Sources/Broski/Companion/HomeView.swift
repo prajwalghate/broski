@@ -152,6 +152,32 @@ final class HomeModel: ObservableObject {
 
     // MARK: Attachments
 
+    /// Something dropped on the window: a file is attached, an image (from a browser, Photos) is saved and
+    /// attached, a web link goes into what you're typing.
+    func drop(_ providers: [NSItemProvider]) -> Bool {
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    Task { @MainActor in self.attach([url]) }
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                    guard let data, let png = NSImage(data: data)?.pngData() else { return }
+                    let url = FileManager.default.temporaryDirectory.appendingPathComponent("Dropped image \(UUID().uuidString.prefix(6)).png")
+                    guard (try? png.write(to: url)) != nil else { return }
+                    Task { @MainActor in self.attach([url]) }
+                }
+            } else if provider.canLoadObject(ofClass: URL.self) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, url.scheme?.hasPrefix("http") == true else { return }
+                    Task { @MainActor in self.draft = self.draft.isEmpty ? url.absoluteString : self.draft + " " + url.absoluteString }
+                }
+            }
+        }
+        return true
+    }
+
     func attach(_ urls: [URL]) {
         pending += urls.filter { url in !pending.contains(url) }
     }
@@ -508,6 +534,7 @@ struct HomeView: View {
     var openDashboard: () -> Void
     var openMemory: () -> Void
     @FocusState private var focused: Bool
+    @State private var dropping = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -520,6 +547,18 @@ struct HomeView: View {
         }
         .frame(minWidth: 480, minHeight: 560)
         .background(Color(nsColor: .windowBackgroundColor))
+        // Drop anywhere in the window: files, images from a browser or Photos, or a link.
+        .onDrop(of: [.fileURL, .image, .url], isTargeted: $dropping) { model.drop($0) }
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Brand.purple, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Brand.purple.opacity(0.06)))
+                    .overlay(Text("Drop to share with Broski").font(.system(size: 14, weight: .semibold)).foregroundStyle(Brand.purple))
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
+        }
         .onAppear { focused = true }
         // Back from Settings with a key or a model: look again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in model.objectWillChange.send() }
@@ -823,15 +862,6 @@ struct HomeView: View {
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.4)))
-            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                for provider in providers {
-                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                        guard let url else { return }
-                        Task { @MainActor in model.attach([url]) }
-                    }
-                }
-                return true
-            }
             HStack(spacing: 8) {
                 Menu {
                     Button("No project") { model.project = nil }
