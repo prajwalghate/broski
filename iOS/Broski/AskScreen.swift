@@ -254,7 +254,7 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         if response.notification.request.content.userInfo["route"] as? String == "checkin" {
-            await MainActor.run { PhoneRouter.shared.request = .checkIn }
+            await MainActor.run { PhoneRouter.shared.open(.checkIn) }
         }
     }
 

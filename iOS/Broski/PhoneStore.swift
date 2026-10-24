@@ -21,6 +21,8 @@ final class PhoneStore: ObservableObject {
     @Published private(set) var sharedUnavailable = false
     /// Projects the Mac keeps away from Claude (config.localOnlyProjects); the phone honours them too.
     private(set) var localOnly: Set<String> = []
+    /// Which model does what (config.models, set on the Mac); nil means Claude by role.
+    private(set) var models: ModelSettings?
     @Published var problem: String?
 
     private static let bookmarkKey = "BroskiFolderBookmark"
@@ -154,8 +156,9 @@ final class PhoneStore: ObservableObject {
 
     /// Re-reads config.json; callers about to send a project's text to Claude call this first.
     func refreshLocalOnly() {
-        let (names, readable) = Self.localOnlyProjects(in: root, projects: projects)
+        let (names, readable, models) = Self.localOnlyProjects(in: root, projects: projects)
         localOnly = names
+        self.models = models
         // Failing closed silently would just look like Claude stopped answering, so say why.
         if !readable {
             problem = Self.unreadableConfig
@@ -168,16 +171,16 @@ final class PhoneStore: ObservableObject {
     /// defaults file into iCloud and race the Mac. A file iCloud hasn't fetched yet, or one that won't parse,
     /// counts every project as local only, so nothing slips out to Claude meanwhile. `readable` is false only
     /// for a file that's there but won't parse (a pending download isn't the user's to fix).
-    private static func localOnlyProjects(in root: URL, projects: [String]) -> (names: Set<String>, readable: Bool) {
+    private static func localOnlyProjects(in root: URL, projects: [String]) -> (names: Set<String>, readable: Bool, models: ModelSettings?) {
         let fm = FileManager.default
         let url = root.appendingPathComponent("config.json")
         guard fm.fileExists(atPath: url.path) else {
             let pending = fm.fileExists(atPath: root.appendingPathComponent(".config.json.icloud").path)
-            return (pending ? Set(projects) : [], true)
+            return (pending ? Set(projects) : [], true, nil)
         }
         guard let data = try? Data(contentsOf: url),
-              let config = try? JSONDecoder().decode(BroskiConfig.self, from: data) else { return (Set(projects), false) }
-        return (Set(config.localOnlyProjects), true)
+              let config = try? JSONDecoder().decode(BroskiConfig.self, from: data) else { return (Set(projects), false, nil) }
+        return (Set(config.localOnlyProjects), true, config.models)
     }
 
     func items(in project: String?) -> [Item] {

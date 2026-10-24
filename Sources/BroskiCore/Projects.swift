@@ -109,6 +109,19 @@ public enum Resources {
         parts(forFiles: paths.map { root.appendingPathComponent($0) })
     }
 
+    /// Keeping a private conversation: files shared in it (outside the Broski folder until now) are copied into each
+    /// turn's project resources, and the turns point at the copies.
+    public static func keep(_ turns: [Turn], root: URL) -> [Turn] {
+        turns.map { turn in
+            guard let files = turn.files else { return turn }
+            var copy = turn
+            copy.files = files.compactMap { path in
+                path.hasPrefix("/") ? try? add(file: URL(fileURLWithPath: path), project: turn.project, root: root) : path
+            }
+            return copy
+        }
+    }
+
     /// The same for files outside the Broski folder (a private conversation keeps nothing, so nothing is copied).
     public static func parts(forFiles urls: [URL]) -> [ModelPart] {
         urls.map { url in

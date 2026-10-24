@@ -6,7 +6,7 @@ final class PhoneRouter: ObservableObject {
     static let shared = PhoneRouter()
 
     enum Request: String, Equatable {
-        /// Open Capture and start listening.
+        /// Open the conversation and start listening.
         case talk
         /// Open Capture ready to type.
         case note
@@ -19,9 +19,19 @@ final class PhoneRouter: ObservableObject {
     }
 
     @Published var request: Request?
+    /// The request came from a broski:// link (a web page, a message, a note): it opens the screen but never starts
+    /// the mic. Only Siri, the Action Button, Shortcuts and Control Center, which you trigger yourself, do.
+    private(set) var fromLink = false
+
+    /// Siri, the Action Button, Shortcuts, Control Center and notifications.
+    func open(_ request: Request) {
+        fromLink = false
+        self.request = request
+    }
 
     func handle(_ url: URL) {
         guard url.scheme == "broski", let request = Request(rawValue: url.host ?? "") else { return }
+        fromLink = true
         self.request = request
     }
 }

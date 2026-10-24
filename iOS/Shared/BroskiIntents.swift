@@ -3,12 +3,12 @@ import AppIntents
 /// Opens Broski listening: for Siri ("Talk to Broski"), the Action Button, Shortcuts and Control Center.
 struct TalkToBroskiIntent: AppIntent {
     static var title: LocalizedStringResource = "Talk to Broski"
-    static var description = IntentDescription("Opens Broski and starts listening. Talk as long as you like; nothing is saved until you check it.")
+    static var description = IntentDescription("Opens your conversation with Broski and starts listening. Nothing is saved unless you tap Save.")
     static var openAppWhenRun = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        PhoneRouter.shared.request = .talk
+        PhoneRouter.shared.open(.talk)
         return .result()
     }
 }
@@ -20,7 +20,7 @@ struct NewBroskiNoteIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        PhoneRouter.shared.request = .note
+        PhoneRouter.shared.open(.note)
         return .result()
     }
 }
@@ -32,7 +32,7 @@ struct RiffWithBroskiIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        PhoneRouter.shared.request = .riff
+        PhoneRouter.shared.open(.riff)
         return .result()
     }
 }
@@ -44,7 +44,7 @@ struct AskBroskiIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        PhoneRouter.shared.request = .ask
+        PhoneRouter.shared.open(.ask)
         return .result()
     }
 }

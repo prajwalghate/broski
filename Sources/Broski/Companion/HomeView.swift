@@ -331,22 +331,14 @@ final class HomeModel: ObservableObject {
 
     /// Asks the fast model what in the last few turns is worth saving; shows a card when there's something.
     func suggestSave(force: Bool) {
-        let recent = turns.suffix(6).filter { $0.speaker == .you || $0.speaker == .broski }
-        guard recent.contains(where: { $0.speaker == .you }) else {
-            if force { problem = "Nothing to save yet." }
-            return
-        }
-        let transcript = recent.map { "\($0.speaker == .you ? "User" : "Broski"): \($0.text)" }.joined(separator: "\n\n")
-        let localOnly = touchesLocalOnly(transcript)
         // The model isn't told local-only projects exist, so it can't file anything into them.
         let known = library.projectNames.filter { !localOnlyProjects.contains($0) }
         let standing = project.map { DecisionLog.current(root: root, project: $0) } ?? []
-        var system = SaveCard.instructions + "\n\nThe user's projects: " + known.joined(separator: ", ")
-        if !standing.isEmpty {
-            system += "\n\nCurrent decisions on \(project ?? ""):\n<decisions>\n" + standing.suffix(12).map { "- \($0.text)" }.joined(separator: "\n") + "\n</decisions>"
+        guard let request = SaveCard.request(turns: turns, projects: known, decisions: standing, project: project) else {
+            if force { problem = "Nothing to save yet." }
+            return
         }
-        let request = ModelRequest(system: system, messages: [ModelMessage(role: .user, text: "<turns>\n\(transcript)\n</turns>")],
-                                   maxTokens: 1500, schemaJSON: SaveCard.schemaJSON)
+        let localOnly = touchesLocalOnly(request.messages.map(\.text).joined())
         let gateway = gateway
         let project = project
         Task {
@@ -377,42 +369,16 @@ final class HomeModel: ObservableObject {
 
     func saveCard() {
         guard let card else { return }
-        var counts: [SaveCard.Entry.Kind: Int] = [:]
         do {
-            for entry in card.items {
-                let tags = ["conversation"]
-                let kind: NoteKind
-                switch entry.kind {
-                case .note: kind = .note
-                case .idea: kind = .idea
-                case .todo: kind = .todo
-                case .bug: kind = .bug
-                case .decision:
-                    let decision = Decision(device: "mac", project: card.project, text: entry.title,
-                                            body: entry.body.isEmpty ? nil : entry.body, replaces: entry.replaces,
-                                            turn: turns.last(where: { $0.speaker == .you })?.id)
-                    try DecisionLog.record(decision, root: root)
-                    if let project = card.project {
-                        try? ChangeStream.append([ChangeEvent(at: decision.at, project: project, source: "broski", kind: "decided",
-                                                              id: "\(project):decision/\(decision.id)", title: decision.text)],
-                                                 root: root, project: project)
-                    }
-                    counts[entry.kind, default: 0] += 1
-                    continue
-                }
-                _ = try library.store.create(ItemDraft(project: card.project, kind: kind, tags: tags, title: entry.title,
-                                                       body: entry.body, context: ItemContext(app: "Broski conversation")))
-                counts[entry.kind, default: 0] += 1
-            }
+            let saved = try SaveCard.save(card, store: library.store, root: root, device: "mac",
+                                          turn: turns.last(where: { $0.speaker == .you })?.id)
+            library.reload()
+            add(Turn(device: "mac", speaker: .note, text: saved, project: card.project))
+            self.card = nil
         } catch {
             problem = "Couldn't save: \(error.localizedDescription)"
-            return
+            library.reload()
         }
-        library.reload()
-        let summary = counts.sorted { $0.key.rawValue < $1.key.rawValue }
-            .map { "\($0.value) \($0.key.rawValue)\($0.value == 1 ? "" : "s")" }.joined(separator: ", ")
-        add(Turn(device: "mac", speaker: .note, text: "Saved to \(card.project ?? "the inbox"): \(summary)", project: card.project))
-        self.card = nil
     }
 
     func removeFromCard(_ index: Int) {
@@ -445,14 +411,7 @@ final class HomeModel: ObservableObject {
 
     func keepPrivate() {
         // Files shared privately were never copied; keeping the conversation keeps them with the project too.
-        let kept = privateTurns.map { turn -> Turn in
-            guard let files = turn.files else { return turn }
-            var copy = turn
-            copy.files = files.compactMap { path in
-                path.hasPrefix("/") ? try? Resources.add(file: URL(fileURLWithPath: path), project: turn.project, root: root) : path
-            }
-            return copy
-        }
+        let kept = Resources.keep(privateTurns, root: root)
         privateTurns = []
         isPrivate = false
         askKeep = false

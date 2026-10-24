@@ -6,7 +6,10 @@ enum Keychain {
     private static let service = Bundle.main.bundleIdentifier ?? "broski"
     private static let account = "claude-api-key"
 
-    static var claudeKey: String? {
+    static var claudeKey: String? { Self.get(account) }
+
+    /// Another model's key ("model.<id>"), as on the Mac.
+    static func get(_ account: String) -> String? {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                     kSecAttrAccount as String: account, kSecReturnData as String: true]
         var result: AnyObject?

@@ -7,35 +7,37 @@ struct BroskiPhoneApp: App {
     @StateObject private var store: PhoneStore
     @StateObject private var capture: CaptureModel
     @StateObject private var riff: PhoneRiff
+    @StateObject private var home: PhoneHome
     @StateObject private var recorder = Recorder()
     @StateObject private var router = PhoneRouter.shared
     @Environment(\.scenePhase) private var phase
-    @State private var tab = Tab.capture
+    @State private var tab = Tab.talk
     @State private var showCheckIn = false
     @State private var showRiff = false
 
-    enum Tab { case capture, notes, ask, settings }
+    enum Tab { case talk, capture, notes, settings }
 
     init() {
         let store = PhoneStore()
         _store = StateObject(wrappedValue: store)
         _capture = StateObject(wrappedValue: CaptureModel(store: store))
         _riff = StateObject(wrappedValue: PhoneRiff(store: store))
+        _home = StateObject(wrappedValue: PhoneHome(store: store))
         UNUserNotificationCenter.current().delegate = NotificationRouter.shared
     }
 
     var body: some Scene {
         WindowGroup {
             TabView(selection: $tab) {
+                TalkScreen(model: home, store: store, recorder: recorder, onRiff: { openRiff(listening: false) })
+                    .tabItem { Label("Talk", systemImage: "bubble.left.and.text.bubble.right") }
+                    .tag(Tab.talk)
                 CaptureView(capture: capture, recorder: recorder, store: store)
                     .tabItem { Label("Capture", systemImage: "square.and.pencil") }
                     .tag(Tab.capture)
                 NotesView(store: store)
                     .tabItem { Label("Notes", systemImage: "square.stack") }
                     .tag(Tab.notes)
-                AskScreen(store: store, recorder: recorder, onRiff: { openRiff(listening: false) })
-                    .tabItem { Label("Ask", systemImage: "sparkle.magnifyingglass") }
-                    .tag(Tab.ask)
                 SettingsView(store: store)
                     .tabItem { Label("Settings", systemImage: "gearshape") }
                     .tag(Tab.settings)
@@ -60,18 +62,20 @@ struct BroskiPhoneApp: App {
             }
             .sheet(isPresented: $showCheckIn) { CheckInScreen(store: store) }
             .sheet(isPresented: $showRiff) { RiffScreen(model: riff, store: store, recorder: recorder) }
-            // Capture and Ask share one mic: leaving a screen ends its recording, and only a note keeps the words
-            // (a question dictated on Ask mustn't end up in the note).
+            // Talk and Capture share one mic: leaving a screen ends its recording, and its words stay where they were
+            // said (in the conversation's box, or the note).
             .onChange(of: tab) { old, _ in
                 guard recorder.isRecording else { return }
                 Task {
                     let heard = await recorder.stop()
                     if old == .capture { capture.addSpoken(heard) }
+                    if old == .talk { home.addHeard(heard) }
                 }
             }
             .onChange(of: phase) { _, new in
                 if new == .active {
                     store.reload()
+                    home.reload()
                     Task { await CheckInSchedule.refresh(items: store.items) }
                 }
                 // Going to the background ends a recording at once but keeps what was said for a note in the draft.
@@ -89,26 +93,32 @@ extension BroskiPhoneApp {
     private func route(_ request: PhoneRouter.Request?) {
         guard let request else { return }
         router.request = nil
+        // A broski:// link opens the screen but never starts the mic; only what you trigger yourself does.
+        let listen = !router.fromLink
         // Everything else opens behind the riff, so it steps aside (it's kept for next time).
         if request != .riff { showRiff = false }
         switch request {
         case .talk:
-            tab = .capture
+            tab = .talk
+            guard listen, home.canTalk else { return }
             Task {
                 // Give the app a moment to come forward before the mic starts.
                 try? await Task.sleep(nanoseconds: 450_000_000)
-                if !recorder.isRecording { await recorder.start() }
+                if !recorder.isRecording {
+                    home.stopSpeaking()
+                    await recorder.start()
+                }
             }
         case .note:
             tab = .capture
             capture.focusRequest += 1
         case .ask:
-            tab = .ask
+            tab = .talk
         case .checkIn:
             showCheckIn = true
         case .riff:
-            tab = .ask
-            openRiff(listening: true)
+            tab = .talk
+            openRiff(listening: listen)
         }
     }
 
@@ -142,12 +152,20 @@ extension BroskiPhoneApp {
             riff.addHeard(heard)
         } else if tab == .capture {
             capture.addSpoken(heard)
+        } else if tab == .talk {
+            home.addHeard(heard)
         }
     }
 }
 
 enum Brand {
-    static let purple = Color(red: 0.47, green: 0.33, blue: 0.95)
+    /// #7d4dff, the design system's purple.
+    static let purple = Color(red: 125 / 255, green: 77 / 255, blue: 1)
+    /// The design system's private-mode text: #94560a on light, #ffbe4d on dark.
+    static let privateText = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 1, green: 190 / 255, blue: 77 / 255, alpha: 1)
+            : UIColor(red: 148 / 255, green: 86 / 255, blue: 10 / 255, alpha: 1)
+    })
 }
 
 extension NoteKind {

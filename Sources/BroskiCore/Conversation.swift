@@ -237,6 +237,49 @@ public struct SaveCard: Equatable, Sendable {
     }
 }
 
+extension SaveCard {
+    /// The fast model's review of the last six turns of the conversation: what's worth saving, the project and topic.
+    /// `projects` are the only ones it may file into (never local-only ones). Nil when you haven't said anything yet.
+    public static func request(turns: [Turn], projects: [String], decisions: [Decision], project: String?) -> ModelRequest? {
+        let recent = turns.filter { $0.speaker == .you || $0.speaker == .broski }.suffix(6)
+        guard recent.contains(where: { $0.speaker == .you }) else { return nil }
+        let transcript = recent.map { "\($0.speaker == .you ? "User" : "Broski"): \($0.text)" }.joined(separator: "\n\n")
+        var system = instructions + "\n\nThe user's projects: " + projects.joined(separator: ", ")
+        if !decisions.isEmpty {
+            system += "\n\nCurrent decisions on \(project ?? "this"):\n<decisions>\n"
+                + decisions.suffix(12).map { "- \($0.text)" }.joined(separator: "\n") + "\n</decisions>"
+        }
+        return ModelRequest(system: system, messages: [ModelMessage(role: .user, text: "<turns>\n\(transcript)\n</turns>")],
+                            maxTokens: 1500, schemaJSON: schemaJSON)
+    }
+
+    /// Saves what you kept from a card: notes, ideas, todos and bugs into the project, decisions into its decision log
+    /// and change stream. Returns the line the conversation shows ("Saved to strado: 1 decision, 2 todos").
+    public static func save(_ card: SaveCard, store: ItemStore, root: URL, device: String, turn: String?, date: Date = Date()) throws -> String {
+        var counts: [Entry.Kind: Int] = [:]
+        for entry in card.items {
+            if entry.kind == .decision {
+                let decision = Decision(at: date, device: device, project: card.project, text: entry.title,
+                                        body: entry.body.isEmpty ? nil : entry.body, replaces: entry.replaces, turn: turn)
+                try DecisionLog.record(decision, root: root)
+                if let project = card.project {
+                    try? ChangeStream.append([ChangeEvent(at: date, project: project, source: "broski", kind: "decided",
+                                                          id: "\(project):decision/\(decision.id)", title: decision.text)],
+                                             root: root, project: project)
+                }
+            } else {
+                _ = try store.create(ItemDraft(project: card.project, kind: NoteKind(rawValue: entry.kind.rawValue) ?? .note,
+                                               tags: ["conversation"], title: entry.title, body: entry.body,
+                                               context: ItemContext(app: "Broski conversation")), date: date)
+            }
+            counts[entry.kind, default: 0] += 1
+        }
+        let summary = counts.sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { "\($0.value) \($0.key.rawValue)\($0.value == 1 ? "" : "s")" }.joined(separator: ", ")
+        return "Saved to \(card.project ?? "the inbox"): \(summary)"
+    }
+}
+
 // MARK: Context for a reply
 
 /// Builds what the model sees for the next reply: who Broski is, what it knows about you (fenced as data), the
