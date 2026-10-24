@@ -1,0 +1,3 @@
+#!/bin/bash
+# Runs before every commit (install once with scripts/install-hooks.sh).
+exec "$(git rev-parse --show-toplevel)/scripts/check-secrets.sh" --staged

@@ -1,0 +1,18 @@
+Broski
+Copyright 2026 The Broski authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It uses the following third-party work:
+
+whisper.cpp (https://github.com/ggml-org/whisper.cpp)
+  Copyright (c) The ggml authors
+  MIT License. Linked as the official prebuilt XCFramework (release b5454).
+
+Underdog Bark 3.0 (https://huggingface.co/ConwayResearch/Underdog-Bark-3.0)
+  By Conway Research. Creative Commons Attribution 4.0 (CC BY 4.0).
+  Built on NVIDIA parakeet-tdt-0.6b-v3, CC BY 4.0.
+  Not bundled: downloaded on the user's device when they choose to, pinned to a commit and checked by SHA-256.
+
+Whisper model weights (large-v3-turbo, https://github.com/openai/whisper)
+  By OpenAI. MIT License. Not bundled: downloaded on the user's device when they choose to.
