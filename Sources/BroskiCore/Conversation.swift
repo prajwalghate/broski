@@ -56,19 +56,6 @@ public struct ConversationStore: Sendable {
 
     var folder: URL { root.appendingPathComponent("conversations", isDirectory: true) }
 
-    private static let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys]
-        return encoder
-    }()
-
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
-
     /// "2026-10-24", in the device's calendar.
     static func dayKey(_ date: Date) -> String {
         let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
@@ -81,17 +68,7 @@ public struct ConversationStore: Sendable {
     }
 
     public func append(_ turn: Turn) throws {
-        let url = file(for: turn.at)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        var line = try Self.encoder.encode(turn)
-        line.append(0x0A)
-        if let handle = try? FileHandle(forWritingTo: url) {
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: line)
-        } else {
-            try line.write(to: url)
-        }
+        try JSONLines.append(turn, to: file(for: turn.at))
     }
 
     /// Every device's turns on one day, in time order.
@@ -103,10 +80,7 @@ public struct ConversationStore: Sendable {
         let month = folder.appendingPathComponent(String(day.prefix(7)), isDirectory: true)
         let files = (try? FileManager.default.contentsOfDirectory(at: month, includingPropertiesForKeys: nil)) ?? []
         return files.filter { $0.lastPathComponent.hasPrefix(day + ".") && $0.pathExtension == "jsonl" }
-            .flatMap { url -> [Turn] in
-                guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-                return text.split(separator: "\n").compactMap { try? Self.decoder.decode(Turn.self, from: Data($0.utf8)) }
-            }
+            .flatMap { JSONLines.read(Turn.self, from: $0) }
             .sorted { $0.at == $1.at ? $0.id < $1.id : $0.at < $1.at }
     }
 

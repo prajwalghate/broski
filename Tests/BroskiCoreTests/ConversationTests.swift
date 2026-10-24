@@ -51,6 +51,16 @@ struct ConversationTests {
         #expect(store.recent(10, project: "strado").isEmpty)
     }
 
+    @Test("turns a fraction of a second apart, from two devices, keep their order")
+    func subSecondOrder() throws {
+        let root = try scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let base = at("2026-10-24T09:00:00Z")
+        try ConversationStore(root: root, device: "zz-mac").append(Turn(id: "a", at: base.addingTimeInterval(0.2), device: "zz-mac", speaker: .you, text: "first"))
+        try ConversationStore(root: root, device: "aa-phone").append(Turn(id: "z", at: base.addingTimeInterval(0.7), device: "aa-phone", speaker: .you, text: "second"))
+        #expect(ConversationStore(root: root, device: "mac").turns(on: base).map(\.text) == ["first", "second"])
+    }
+
     @Test("a turn written by a newer Broski still reads")
     func forwardCompatible() throws {
         let line = #"{"v":2,"id":"t1","at":"2026-10-24T10:00:00Z","device":"mac","speaker":"you","text":"hi","mood":"curious"}"#
