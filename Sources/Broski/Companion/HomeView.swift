@@ -13,6 +13,8 @@ final class HomeModel: ObservableObject {
     @Published private(set) var thinking = false
     /// "Reading example.com…" while links you shared are being opened.
     @Published private(set) var reading: String?
+    /// Your rules for riffs, kept for every riff.
+    @Published private(set) var riffRules: [String] = []
     @Published private(set) var isPrivate = false
     /// Leaving private mode after saying something: keep it, or let it go.
     @Published var askKeep = false
@@ -62,6 +64,7 @@ final class HomeModel: ObservableObject {
         guard !thinking else { return }
         turns = store.recent(80)
         recallIndex = nil
+        riffRules = RiffMode.rules(root: root)
         // Someone new (nothing said, known or noted yet): Broski opens the conversation.
         if FirstRun.needed(turns: turns, aboutYou: Memory.aboutYou(root: root)), ItemStore(root: root).allItems().isEmpty {
             add(FirstRun.greetingTurn(device: "mac"))
@@ -91,7 +94,10 @@ final class HomeModel: ObservableObject {
         if let thread { topic = thread }
     }
 
-    var modelLabel: String { deep ? "Deep" : "Everyday" }
+    var modelLabel: String { riffing ? "Riff" : deep ? "Deep" : "Everyday" }
+
+    /// Riff mode is on: from its start marker in the conversation until it's wrapped up, so it survives a restart.
+    var riffing: Bool { RiffMode.active(turns: isPrivate ? privateTurns : turns) }
 
     /// Packs a new project can use: the built-ins (but core, which every project has) and your own.
     var packs: [Pack] { Packs.all(root: root).filter { $0.id != "core" } }
@@ -122,7 +128,12 @@ final class HomeModel: ObservableObject {
         let files = pending
         guard !text.isEmpty || !files.isEmpty, !thinking else { return }
         draft = ""
-        if let command = ConversationCommand.parse(text, catalog: library.catalog) { return run(command) }
+        if let command = ConversationCommand.parse(text, catalog: library.catalog, riffing: riffing) {
+            guard case .startRiff(let about) = command else { return run(command) }
+            startRiff(about: about)
+            // "Let's riff about pricing": the riff opens with those words.
+            guard about != nil else { return }
+        }
         pending = []
         if text.isEmpty { text = "Shared " + files.map(\.lastPathComponent).joined(separator: ", ") }
         // What you share is kept with the project; a private conversation keeps nothing, so nothing is copied.
@@ -143,7 +154,7 @@ final class HomeModel: ObservableObject {
             }
         }
         let turn = Turn(device: "mac", speaker: .you, text: text, files: isPrivate ? files.map(\.path) : (stored.isEmpty ? nil : stored),
-                        project: project, topic: topic)
+                        project: project, topic: topic, mode: riffing ? "riff" : nil)
         add(turn)
         let links = Resources.links(in: text)
         if !isPrivate, !links.isEmpty {
@@ -303,8 +314,11 @@ final class HomeModel: ObservableObject {
                                                 page: isPrivate ? nil : project.flatMap { library.pages[$0] },
                                                 project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
                                                 decisions: decisions, recall: recall, attachments: attachments,
-                                                firstRun: !isPrivate && FirstRun.active(turns: history))
-        let role: ModelRole = deep ? .deep : .everyday
+                                                firstRun: !isPrivate && FirstRun.active(turns: history),
+                                                riff: riffing ? riffRules : nil)
+        // Riffs think on the deep model.
+        let riff = riffing
+        let role: ModelRole = deep || riff ? .deep : .everyday
         let gateway = gateway
         let project = project
         let wasPrivate = isPrivate
@@ -320,9 +334,10 @@ final class HomeModel: ObservableObject {
                 if route.overBudget { sources.append("Past today's limit: \(route.model)") }
                 if route.substituted { sources.append("On this Mac: \(route.model)") }
                 add(Turn(device: "mac", speaker: .broski, text: text, project: project, topic: topic, model: route.model,
-                         sources: sources.isEmpty ? nil : sources))
+                         sources: sources.isEmpty ? nil : sources, mode: riff ? "riff" : nil))
                 if speak { say(text) }
-                if !wasPrivate { suggestSave(force: false) }
+                // No save cards while you riff: the wrap-up offers one at the end.
+                if !wasPrivate, !riff { suggestSave(force: false) }
                 if !wasPrivate, FirstRun.justFinished(turns: turns) {
                     let result = await firstRunDone()
                     if !result.isEmpty {
@@ -366,6 +381,20 @@ final class HomeModel: ObservableObject {
         case .switchProject(let name):
             project = name
             add(Turn(device: "mac", speaker: .topic, text: name, project: name))
+        case .startRiff(let about):
+            startRiff(about: about)
+        case .endRiff:
+            endRiff()
+        case .riffRule(let rule):
+            do {
+                try RiffMode.addRule(rule, root: root, device: "mac")
+                riffRules = RiffMode.rules(root: root)
+                add(Turn(device: "mac", speaker: .note, text: "Riff rule kept: \(rule)", project: project))
+            } catch {
+                problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        case .dropRiffRule(let phrase):
+            dropRiffRule(phrase)
         case .newPack(let name):
             let context = turns
             let gateway = needsModel ? nil : self.gateway
@@ -475,6 +504,69 @@ final class HomeModel: ObservableObject {
         self.card = card.items.isEmpty ? nil : card
     }
 
+    // MARK: Riff mode
+
+    func toggleRiff() { riffing ? endRiff() : startRiff(about: nil) }
+
+    func startRiff(about: String?) {
+        guard !riffing else { return }
+        card = nil
+        add(RiffMode.startTurn(device: "mac", project: isPrivate ? nil : project, about: about))
+    }
+
+    /// Ends the riff and offers what came of it as one save card.
+    func endRiff() {
+        guard riffing else { return }
+        let request = RiffMode.wrapRequest(turns: isPrivate ? privateTurns : turns)
+        add(RiffMode.endTurn(device: "mac", project: isPrivate ? nil : project))
+        guard let request else { return }
+        let gateway = gateway
+        let project = isPrivate ? nil : project
+        let localOnly = touchesLocalOnly(request.messages.map(\.text).joined())
+        thinking = true
+        reading = "Wrapping up the riff…"
+        Task {
+            defer { thinking = false; reading = nil }
+            do {
+                let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly)
+                if let wrapped = RiffMode.card(from: reply.text, project: project) {
+                    card = wrapped
+                } else {
+                    problem = "Nothing from the riff to save."
+                }
+            } catch {
+                problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    func dropRiffRule(_ phrase: String) {
+        do {
+            if try RiffMode.dropRule(phrase, root: root, device: "mac") {
+                riffRules = RiffMode.rules(root: root)
+                add(Turn(device: "mac", speaker: .note, text: phrase.isEmpty ? "Riff rules cleared" : "Dropped the riff rule about \(phrase)", project: project))
+            } else {
+                problem = "No riff rule mentions “\(phrase)”."
+            }
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+
+    func addRiffRule(_ rule: String) {
+        do {
+            try RiffMode.addRule(rule, root: root, device: "mac")
+            riffRules = RiffMode.rules(root: root)
+        } catch {
+            problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func removeRiffRule(_ rule: String) {
+        _ = try? RiffMode.dropRule(rule, root: root, device: "mac")
+        riffRules = RiffMode.rules(root: root)
+    }
+
     // MARK: Private mode
 
     func togglePrivate() { isPrivate ? leavePrivate() : goPrivate() }
@@ -562,12 +654,15 @@ struct HomeView: View {
     var openMemory: () -> Void
     @FocusState private var focused: Bool
     @State private var dropping = false
+    @State private var showingRules = false
+    @State private var newRule = ""
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
             if model.isPrivate { privateBanner }
+            if model.riffing { riffBanner }
             conversation
             Divider()
             composer
@@ -606,7 +701,8 @@ struct HomeView: View {
                 .overlay(Capsule().stroke(Color.secondary.opacity(0.5)))
                 .padding(1)
                 .foregroundStyle(Brand.purple)
-                .help(model.deep ? "Replies come from the deep model" : "Replies come from the everyday model")
+                .help(model.riffing ? "Riffing: brainstorming on the deep model, by the rules"
+                      : model.deep ? "Replies come from the deep model" : "Replies come from the everyday model")
             Toggle("Speak", isOn: Binding(get: { model.speak }, set: { model.speak = $0; model.onSpeakChange($0) }))
                 .toggleStyle(.switch).controlSize(.mini)
                 .help("Read Broski's replies aloud")
@@ -618,6 +714,14 @@ struct HomeView: View {
                 .buttonStyle(.borderless).help("What Broski knows")
             Button(action: openDashboard) { Image(systemName: "square.grid.2x2") }
                 .buttonStyle(.borderless).help("Open the dashboard")
+            Button { model.toggleRiff() } label: {
+                Image(systemName: model.riffing ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
+                    .foregroundStyle(model.riffing ? Brand.purple : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.thinking)
+            .help(model.riffing ? "Wrap up the riff: what came of it, as one card to save"
+                  : "Riff: brainstorm by the rules (yours too). Or say “let's riff about …”")
             Button { model.togglePrivate() } label: {
                 Image(systemName: model.isPrivate ? "lock.fill" : "lock").foregroundStyle(model.isPrivate ? Self.privateText : .secondary)
             }
@@ -625,6 +729,77 @@ struct HomeView: View {
             .help(model.isPrivate ? "Leave private mode" : "Go private: Broski starts blank and keeps nothing")
         }
         .padding(12)
+    }
+
+    /// Riffing: the rules in play (yours as chips, each removable), adding one, and Wrap up.
+    private var riffBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "bubble.left.and.bubble.right.fill").foregroundStyle(Brand.purple)
+                Text("Riffing. Broski builds on your ideas, pushes back, asks one question at a time.")
+                    .font(.system(size: 12))
+                Spacer()
+                Button("Rules") { showingRules.toggle() }
+                    .controlSize(.small)
+                    .help("The brainstorming rules, and yours")
+                    .popover(isPresented: $showingRules, arrowEdge: .bottom) { rulesPopover }
+                Button("Wrap up") { model.endRiff() }
+                    .buttonStyle(.borderedProminent).tint(Brand.purple).controlSize(.small)
+                    .disabled(model.thinking)
+                    .help("End the riff: the summary, ideas, decisions and todos, as one card to save")
+            }
+            if !model.riffRules.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(model.riffRules, id: \.self) { rule in
+                            HStack(spacing: 4) {
+                                Text(rule).font(.system(size: 11)).lineLimit(1)
+                                Button { model.removeRiffRule(rule) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                                    .buttonStyle(.borderless).help("Drop this rule")
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Capsule().fill(Brand.purple.opacity(0.14)))
+                        }
+                    }
+                    .padding(1)
+                }
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(Brand.purple.opacity(0.07))
+    }
+
+    private var rulesPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("EVERY RIFF").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            ForEach(RiffMode.baseRules, id: \.self) { rule in
+                Text("• " + rule).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("YOURS").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).padding(.top, 4)
+            if model.riffRules.isEmpty {
+                Text("None yet. Add one here, or say “rule: …” while riffing.").font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            ForEach(model.riffRules, id: \.self) { rule in
+                HStack {
+                    Text(rule).font(.system(size: 12))
+                    Spacer()
+                    Button("Drop") { model.removeRiffRule(rule) }.buttonStyle(.borderless).font(.system(size: 11))
+                }
+            }
+            HStack {
+                TextField("A rule for every riff, like “no code talk”", text: $newRule)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { addRule() }
+                Button("Add") { addRule() }.disabled(newRule.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(14)
+        .frame(width: 380)
+    }
+
+    private func addRule() {
+        model.addRiffRule(newRule)
+        newRule = ""
     }
 
     @ViewBuilder private var privateBanner: some View {
@@ -847,9 +1022,20 @@ struct HomeView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
+                if model.riffing {
+                    ForEach(["Give me three directions", "Poke holes in this", "What's the simplest version?"], id: \.self) { ask in
+                        chip(ask) {
+                            model.draft = ask
+                            model.send()
+                        }
+                    }
+                    chip("Wrap up") { model.endRiff() }
+                } else {
                 chip("Save that") { model.suggestSave(force: true) }
                 chip(model.deep ? "Back to everyday" : "Think harder") { model.deep.toggle() }
-                if let project = model.project, !model.isPrivate {
+                chip("Riff") { model.startRiff(about: nil) }
+                }
+                if let project = model.project, !model.isPrivate, !model.riffing {
                     chip("What do you know about \(project)?") {
                         model.draft = "What do you know about \(project)?"
                         model.send()
@@ -876,7 +1062,8 @@ struct HomeView: View {
                     .buttonStyle(.borderless).help("Share files: kept in the project's resources")
                 Button { model.takeScreenshot() } label: { Image(systemName: "camera.viewfinder") }
                     .buttonStyle(.borderless).help("Screenshot: this window steps aside; click a window or drag an area (Esc cancels)")
-                TextField("Talk to Broski, or type “note: …”", text: $model.draft, axis: .vertical)
+                TextField(model.riffing ? "Riff: say what's on your mind, or “rule: …”" : "Talk to Broski, or type “note: …”",
+                          text: $model.draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .lineLimit(1...6)

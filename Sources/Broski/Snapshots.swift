@@ -173,17 +173,6 @@ enum Snapshots {
         companion.previewTucked()
         renderTransparent(PillView(companion: companion).frame(width: 460), size: NSSize(width: 460, height: 50), to: folder, "pill-tucked")
 
-        let riff = RiffModel(project: "strado", library: library, brain: app.brain, voice: app.voice, speak: false)
-        riff.riff.turns = [
-            .init(role: .you, text: "I'm thinking strado should have a referral program at launch. Give a free month for each friend who signs up."),
-            .init(role: .broski, text: "A free month is easy to explain, but your notes say the free tier already allows 3 bots, so a free month of Pro is the only reward that means anything. Who refers people: traders who already made money with a bot, or anyone who signs up?"),
-            .init(role: .you, text: "Probably people whose bots are profitable. They'd want to show off."),
-        ]
-        render(RiffView(model: riff, voice: app.voice), size: NSSize(width: 520, height: 560), to: folder, "riff")
-        riff.wrap = Riff.WrapUp(title: "Referral program for strado", summary_markdown: "I want a referral program at launch, aimed at traders whose bots are profitable. The reward is a free month of Pro, since the free tier already covers 3 bots.",
-                                ideas: ["Share a bot's results card as the referral link"], decisions: ["Reward is a free month of Pro"], todos: ["Draft the referral flow", "Check Stripe coupons for a free month"])
-        render(RiffView(model: riff, voice: app.voice), size: NSSize(width: 520, height: 560), to: folder, "riff-wrap")
-
         // The home conversation, read from the Broski folder the way the real one is (seeded once, both appearances).
         let store = ConversationStore(root: app.root, device: "mac")
         if store.recent(1).isEmpty {
@@ -231,6 +220,24 @@ enum Snapshots {
         }
         render(HomeView(model: newcomer, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home-first-run")
         try? FileManager.default.removeItem(at: fresh)
+
+        // Riff mode: the banner with your rules, a riff in progress, and the riff chips.
+        let riffRoot = FileManager.default.temporaryDirectory.appendingPathComponent("broski-snapshot-riff-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: riffRoot, withIntermediateDirectories: true)
+        try? RiffMode.addRule("No code or tech-stack talk, ideas only", root: riffRoot, device: "mac")
+        try? RiffMode.addRule("Push back harder", root: riffRoot, device: "mac")
+        let riffStore = ConversationStore(root: riffRoot, device: "mac")
+        let riffStart = Date().addingTimeInterval(-300)
+        for (i, turn) in [RiffMode.startTurn(device: "mac", project: "strado", about: "a referral program", at: riffStart),
+                          Turn(at: riffStart.addingTimeInterval(10), device: "mac", speaker: .you, text: "What if every user gets a free month for each friend who signs up?", project: "strado", mode: "riff"),
+                          Turn(at: riffStart.addingTimeInterval(20), device: "mac", speaker: .broski, text: "A free month is easy to explain, but your free tier already covers three bots, so only a month of Pro means anything. Two directions: reward the referrer only when the friend's bot runs a week, or let profitable traders share a results card as their link. Who refers people: traders already winning, or anyone who signs up?", project: "strado", model: ClaudeModel.deep, mode: "riff")].enumerated() {
+            _ = i
+            try? riffStore.append(turn)
+        }
+        let riffing = HomeModel(root: riffRoot, library: app.library, voice: app.voice) { BroskiConfig.defaults }
+        riffing.project = "strado"
+        render(HomeView(model: riffing, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home-riff")
+        try? FileManager.default.removeItem(at: riffRoot)
 
         // Reflection's log: one change undone, one standing.
         try? Reflection.apply(Reflection.Proposal(remember: [.init(text: "Reads replies on the phone between meetings", why: "Oct 24: said so while planning strado")],

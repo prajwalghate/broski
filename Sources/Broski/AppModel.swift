@@ -40,7 +40,6 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     private var askPanel: CompanionPanel?
     /// Speech from a mic that closing Ask stopped: the next open keeps the question instead of wiping it.
     private var askKeepsDraft = false
-    private lazy var riffModel = RiffModel(project: nil, library: library, brain: brain, voice: voice, speak: config.speakReplies)
     private(set) lazy var homeModel: HomeModel = {
         let model = HomeModel(root: root, library: library, voice: voice) { [weak self] in self?.config ?? .defaults }
         model.onSpeakChange = { [weak self] on in self?.update { $0.speakReplies = on } }
@@ -51,9 +50,6 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         model.firstRunDone = { [weak self] in await self?.reflector.run() ?? "" }
         return model
     }()
-    /// How many turns the riff had when it was last saved; turns added after (Back to the riff) are unsaved.
-    private var riffSavedTurns = 0
-    private var riffSaveWatch: AnyCancellable?
     private lazy var callModel = CallModel(library: library, brain: brain, transcription: transcription)
     private var askHotKey: HotKey?
     private var helpHotKey: HotKey?
@@ -458,11 +454,6 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             self?.showRiff(project: project, opening: opening)
         }
         askModel.onClose = { [weak self] in self?.closeAsk() }
-        riffModel.onSpeakChange = { [weak self] on in self?.update { $0.speakReplies = on } }
-        riffSaveWatch = riffModel.$saved.sink { [weak self] saved in
-            guard let self else { return }
-            self.riffSavedTurns = saved == nil ? 0 : self.riffModel.riff.turns.count
-        }
         callModel.locale = { [weak self] in self?.config.locale ?? "auto" }
         callModel.onStateChange = { [weak self] on in
             self?.companion.setCalling(on)
@@ -556,33 +547,15 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         memoryModel.reload()
     }
 
-    /// Riff mode: think out loud about a project with Claude.
+    /// Riff mode, in the conversation: from the menu, the pill, Ask or a project page. An opening (a suggested action)
+    /// is said as the riff's first words.
     func showRiff(project: String?, opening: String?) {
-        let fresh = windows["riff"] == nil
-        showWindow("riff", title: "Riff with Broski", size: NSSize(width: 520, height: 640), resizable: true) {
-            RiffView(model: self.riffModel, voice: self.voice)
-        }
-        // A riff lives only in memory until it's saved, so never drop one (or an unsent reply) without asking.
-        let unsaved = riffModel.riff.turns.count > riffSavedTurns
-            || !riffModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let switching = project != nil && project != riffModel.riff.project
-        guard unsaved else {
-            if fresh || opening != nil || project != riffModel.riff.project {
-                riffModel.start(project: project, opening: opening)
-            }
-            return
-        }
-        // Already on screen, same project and nothing new to send: just bring it forward.
-        guard fresh || opening != nil || switching else { return }
-        let alert = NSAlert()
-        alert.messageText = opening == nil && !switching
-            ? "Pick up your riff where you left off?" : "Start a new riff" + (project.map { " about \($0)" } ?? "") + "?"
-        alert.informativeText = "Your riff" + (riffModel.riff.project.map { " about \($0)" } ?? "")
-            + " isn't saved yet. Starting a new one throws it away; Wrap up saves it as a note."
-        alert.addButton(withTitle: "Keep This Riff")
-        alert.addButton(withTitle: "Start New Riff")
-        if alert.runModal() == .alertSecondButtonReturn {
-            riffModel.start(project: project, opening: opening)
+        showHome()
+        if let project { homeModel.project = project }
+        homeModel.startRiff(about: nil)
+        if let opening, !opening.isEmpty {
+            homeModel.draft = opening
+            homeModel.send()
         }
     }
 
@@ -710,12 +683,6 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             stopVoice { [weak self] text in
                 guard let self else { return }
                 self.homeModel.draft = TextTools.joinPhrase(self.homeModel.draft, text)
-            }
-        }
-        if id == "riff", askPanel?.isVisible != true {
-            stopVoice { [weak self] text in
-                guard let self else { return }
-                self.riffModel.draft = TextTools.joinPhrase(self.riffModel.draft, text)
             }
         }
         if id == "onboarding" {

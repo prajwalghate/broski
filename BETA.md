@@ -31,6 +31,7 @@ A short welcome also walks you through setup:
 - **Talk to Broski:** press **⌥⇧B**, or hold **fn** and talk. It remembers your projects, and when you decide something or name a task it offers a card: tap **Save** to file it, or **Not now**. Say "go private" for a conversation that keeps nothing, and "think harder" for the deep model.
 - **What Broski knows:** the menu bar › **What Broski knows**: about you, every project's decisions, and what reflection changed (each with **Undo**).
 - **New project:** describe it in the conversation; Broski proposes one with packs that fit. **Create project** sets up its folder, tracker and setup drafts. "connect ~/code/x" ties a repo to the current project; "new pack: game dev" drafts your own pack.
+- **Riff:** click the riff button in the conversation's header (or say "let's riff about …") to brainstorm. Say "rule: …" to add a rule Broski keeps for every riff; **Rules** shows them all. **Wrap up** turns the riff into one card to save.
 - **Links:** paste a link and Broski reads the page before it replies (a line in the conversation says what it read, with **Open copy**). Say "read the docs at …" or "go through …" for up to 10 pages of a site. Turn it off in Settings › Models › Links.
 - **Models and spending:** Settings › **Models**: a model per role, local servers, Apple's on-device model, today's and this month's spend, a daily limit.
 - **Automations:** Settings › Connections › **Automations**: a notification or a webhook post when a project changes the way you name.

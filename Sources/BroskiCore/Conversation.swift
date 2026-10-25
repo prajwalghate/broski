@@ -26,9 +26,12 @@ public struct Turn: Codable, Equatable, Identifiable, Sendable {
     public var model: String?
     /// What a Broski turn drew on, shown under it ("Decision · Oct 20").
     public var sources: [String]?
+    /// "riff" for a turn in riff mode (and its start marker), "riff-end" for where a riff was wrapped up.
+    public var mode: String?
 
     public init(id: String = UUID().uuidString, at: Date = Date(), device: String, speaker: Speaker, text: String,
-                files: [String]? = nil, project: String? = nil, topic: String? = nil, model: String? = nil, sources: [String]? = nil) {
+                files: [String]? = nil, project: String? = nil, topic: String? = nil, model: String? = nil, sources: [String]? = nil,
+                mode: String? = nil) {
         self.v = 1
         self.id = id
         self.at = at
@@ -40,6 +43,7 @@ public struct Turn: Codable, Equatable, Identifiable, Sendable {
         self.topic = topic
         self.model = model
         self.sources = sources
+        self.mode = mode
     }
 }
 
@@ -127,11 +131,32 @@ public enum ConversationCommand: Equatable, Sendable {
     case connect(String)
     /// "new pack: game dev": draft a pack of tracker sections and command-center widgets.
     case newPack(String)
+    /// "let's riff (about …)": riff mode, brainstorming by the rules.
+    case startRiff(String?)
+    /// "end riff" (or, while riffing, "wrap up"): the wrap-up card, then back to talking.
+    case endRiff
+    /// "rule: no code talk": a rule kept for every riff.
+    case riffRule(String)
+    /// "drop the rule about code" (empty: "clear my riff rules").
+    case dropRiffRule(String)
 
-    public static func parse(_ text: String, catalog: ProjectCatalog?) -> ConversationCommand? {
+    public static func parse(_ text: String, catalog: ProjectCatalog?, riffing: Bool = false) -> ConversationCommand? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let plain = trimmed.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".!? "))
         if let rest = capture(#"^note\s*:\s*(.+)$"#, in: trimmed) { return .note(rest) }
+        // "Wrap up" ends a riff only while riffing; otherwise it's just something said.
+        if riffing, ["wrap up", "wrap it up", "let's wrap up", "lets wrap up", "wrap up the riff"].contains(plain) { return .endRiff }
+        switch plain {
+        case "let's riff", "lets riff", "riff mode", "start riff", "start a riff", "start riff mode", "riff with me": return .startRiff(nil)
+        case "end riff", "end the riff", "end riff mode", "stop riffing", "exit riff mode", "leave riff mode": return .endRiff
+        case "clear my riff rules", "clear riff rules", "clear my rules", "clear the rules", "drop all rules", "drop all my rules": return .dropRiffRule("")
+        default: break
+        }
+        if let about = capture(#"^(?:let'?s riff|start a riff|riff)\s+(?:about|on)\s+(.+?)[.!]?$"#, in: trimmed) { return .startRiff(about) }
+        if let rule = capture(#"^(?:new |riff |add a |add (?:a )?riff )?rule\s*:\s*(.+?)[.!]?$"#, in: trimmed) { return .riffRule(rule) }
+        if let phrase = capture(#"^(?:drop|remove|delete|forget)\s+(?:the\s+|my\s+)?(?:riff\s+)?rule(?:\s+(?:about|on|that says))?\s+(.+?)[.!]?$"#, in: trimmed) {
+            return .dropRiffRule(phrase)
+        }
         switch plain {
         case "go private", "private mode", "start private", "go private mode": return .goPrivate
         case "leave private", "leave private mode", "end private", "exit private", "exit private mode", "stop private": return .leavePrivate
@@ -382,9 +407,10 @@ public enum ConversationContext {
 
     public static func build(aboutYou: String?, page: ProjectPage?, project: String?, turns: [Turn], isPrivate: Bool,
                              maxTurnChars: Int = 24_000, decisions: [Decision] = [], recall: [RecallHit] = [],
-                             attachments: [ModelPart] = [], firstRun: Bool = false) -> ModelRequest {
+                             attachments: [ModelPart] = [], firstRun: Bool = false, riff: [String]? = nil) -> ModelRequest {
         var system = persona
         if firstRun, !isPrivate { system += "\n\n" + FirstRun.guide }
+        if let riff { system += "\n\n" + RiffMode.system(rules: riff) }
         if isPrivate {
             system += "\n\nThis is a private conversation: you know nothing about the user or their projects here, and nothing is kept."
         } else {

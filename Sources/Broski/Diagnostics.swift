@@ -80,6 +80,7 @@ enum Diagnostics {
         if let i = args.firstIndex(of: "--converse"), i + 1 < args.count { return runConverse(args[i + 1], note: note) }
         if args.contains("--reflect") { return runReflect(note: note) }
         if args.contains("--first-run") { return runFirstRun(note: note) }
+        if args.contains("--riff-mode") { return runRiffMode(note: note) }
         if let i = args.firstIndex(of: "--read-link"), i + 1 < args.count {
             return runReadLink(args[i + 1], reply: !args.contains("--no-reply"), note: note)
         }
@@ -329,6 +330,63 @@ enum Diagnostics {
             done = true
         }
         while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
+    /// `--riff-mode`: a riff in the conversation with your key, in a throwaway folder: started by saying so, a rule
+    /// added mid-riff, real replies on the deep model, then the wrap-up card.
+    static func runRiffMode(note: @escaping (String) -> Void) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-riffmode-\(UUID().uuidString)", isDirectory: true)
+        let gateway = ModelGateway(settings: .defaults, root: root, device: "mac") { id in id == "claude" ? Secrets.get(Secrets.claudeKey) : nil }
+        let said = ["Let's riff about a habit tracker for runners that actually keeps people running.",
+                    "rule: no code or tech-stack talk, ideas only",
+                    "What if the app pairs you with a stranger who runs at the same time every morning?",
+                    "Ok, I like the pairing. Let's do a two-week pilot with my running club first."]
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            var turns: [Turn] = []
+            func reply() async throws {
+                let request = ConversationContext.build(aboutYou: nil, page: nil, project: "runlog", turns: turns, isPrivate: false,
+                                                        riff: RiffMode.rules(root: root))
+                let (answer, route) = try await gateway.send(request, role: .deep, project: "runlog")
+                turns.append(Turn(device: "mac", speaker: .broski, text: answer.text, project: "runlog", model: route.model, mode: "riff"))
+                note("you: \(turns.last(where: { $0.speaker == .you })?.text ?? "")\nbroski (\(route.model)): \(answer.text)\n")
+            }
+            do {
+                for text in said {
+                    guard let command = ConversationCommand.parse(text, catalog: nil, riffing: RiffMode.active(turns: turns)) else {
+                        turns.append(Turn(device: "mac", speaker: .you, text: text, project: "runlog", mode: "riff"))
+                        try await reply()
+                        continue
+                    }
+                    switch command {
+                    case .startRiff(let about):
+                        turns.append(RiffMode.startTurn(device: "mac", project: "runlog", about: about))
+                        note("[riff started: \(about ?? "-")]")
+                        turns.append(Turn(device: "mac", speaker: .you, text: text, project: "runlog", mode: "riff"))
+                        try await reply()
+                    case .riffRule(let rule):
+                        try RiffMode.addRule(rule, root: root, device: "mac")
+                        note("[rule kept: \(rule)] rules now: \(RiffMode.rules(root: root))")
+                    default:
+                        note("[unexpected command \(command)]")
+                    }
+                }
+                guard let request = RiffMode.wrapRequest(turns: turns) else { throw WebReader.Failure.empty }
+                turns.append(RiffMode.endTurn(device: "mac", project: "runlog"))
+                let (wrap, _) = try await gateway.send(request, role: .everyday, project: "runlog")
+                let card = RiffMode.card(from: wrap.text, project: "runlog")
+                note("[riff active after wrap: \(RiffMode.active(turns: turns))]")
+                for item in card?.items ?? [] { note("card · \(item.kind.rawValue): \(item.title)\(item.body.isEmpty ? "" : " — " + item.body)") }
+                let spent = UsageLog.entries(root: root)
+                note(String(format: "%d calls (%@), $%.4f", spent.count, Set(spent.map(\.model)).sorted().joined(separator: ", "), spent.reduce(0) { $0 + $1.usd }))
+            } catch {
+                note("failed: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: root)
+            note("done")
+            done.signal()
+        }
+        while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     }
 
     static func runTranscribe(_ files: [String], note: @escaping (String) -> Void) {

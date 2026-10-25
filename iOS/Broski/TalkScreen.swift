@@ -12,6 +12,8 @@ final class PhoneHome: ObservableObject {
     @Published private(set) var thinking = false
     /// "Reading example.com…" while links you shared are being opened.
     @Published private(set) var reading: String?
+    /// Your rules for riffs, kept for every riff (the same ones as on the Mac).
+    @Published private(set) var riffRules: [String] = []
     @Published private(set) var isPrivate = false
     /// Leaving private mode after saying something: keep it, or let it go.
     @Published var askKeep = false
@@ -27,7 +29,7 @@ final class PhoneHome: ObservableObject {
     @Published var speak: Bool { didSet { UserDefaults.standard.set(speak, forKey: Self.speakKey) ; if !speak { voice.stop() } } }
 
     private let store: PhoneStore
-    private let voice = RiffVoice()
+    private let voice = ReplyVoice()
     /// A private conversation lives only here, never on disk.
     private var privateTurns: [Turn] = []
     private var task: Task<Void, Never>?
@@ -46,6 +48,7 @@ final class PhoneHome: ObservableObject {
         guard !thinking else { return }
         turns = conversation.recent(80)
         recallIndex = nil
+        riffRules = RiffMode.rules(root: store.root)
         // Someone new (nothing said, known or noted yet): Broski opens the conversation.
         if FirstRun.needed(turns: turns, aboutYou: Memory.aboutYou(root: store.root)), store.items.isEmpty, !store.sharedUnavailable {
             add(FirstRun.greetingTurn(device: "iphone"))
@@ -55,6 +58,9 @@ final class PhoneHome: ObservableObject {
     }
 
     var visibleTurns: [Turn] { isPrivate ? privateTurns : turns }
+
+    /// Riff mode is on: from its start marker until it's wrapped up (on either device).
+    var riffing: Bool { RiffMode.active(turns: visibleTurns) }
 
     var settings: ModelSettings { store.models ?? .defaults }
 
@@ -91,7 +97,12 @@ final class PhoneHome: ObservableObject {
         let files = pending
         guard !text.isEmpty || !files.isEmpty, !thinking else { return }
         draft = ""
-        if let command = ConversationCommand.parse(text, catalog: store.catalog) { return run(command) }
+        if let command = ConversationCommand.parse(text, catalog: store.catalog, riffing: riffing) {
+            guard case .startRiff(let about) = command else { return run(command) }
+            startRiff(about: about)
+            // "Let's riff about pricing": the riff opens with those words.
+            guard about != nil else { return }
+        }
         pending = []
         if text.isEmpty { text = "Shared " + files.map(\.lastPathComponent).joined(separator: ", ") }
         var stored: [String] = []
@@ -105,7 +116,7 @@ final class PhoneHome: ObservableObject {
             }
         }
         let turn = Turn(device: "iphone", speaker: .you, text: text, files: isPrivate ? files.map(\.path) : (stored.isEmpty ? nil : stored),
-                        project: project, topic: topic)
+                        project: project, topic: topic, mode: riffing ? "riff" : nil)
         add(turn)
         let links = Resources.links(in: text)
         if !isPrivate, !links.isEmpty {
@@ -188,8 +199,11 @@ final class PhoneHome: ObservableObject {
                                                 page: isPrivate ? nil : project.flatMap { store.pages[$0] },
                                                 project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
                                                 decisions: decisions, recall: recall, attachments: attachments,
-                                                firstRun: !isPrivate && FirstRun.active(turns: history))
-        let role: ModelRole = deep ? .deep : .everyday
+                                                firstRun: !isPrivate && FirstRun.active(turns: history),
+                                                riff: riffing ? riffRules : nil)
+        // Riffs think on the deep model.
+        let riff = riffing
+        let role: ModelRole = deep || riff ? .deep : .everyday
         let gateway = gateway
         let project = project
         let wasPrivate = isPrivate
@@ -205,9 +219,10 @@ final class PhoneHome: ObservableObject {
                 if route.overBudget { sources.append("Past today's limit: \(route.model)") }
                 if route.substituted { sources.append("On this iPhone: \(route.model)") }
                 add(Turn(device: "iphone", speaker: .broski, text: text, project: project, topic: topic, model: route.model,
-                         sources: sources.isEmpty ? nil : sources))
+                         sources: sources.isEmpty ? nil : sources, mode: riff ? "riff" : nil))
                 if speak { voice.say(text) }
-                if !wasPrivate { suggestSave(force: false) }
+                // No save cards while you riff: the wrap-up offers one at the end.
+                if !wasPrivate, !riff { suggestSave(force: false) }
             } catch {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
@@ -240,6 +255,25 @@ final class PhoneHome: ObservableObject {
             add(Turn(device: "iphone", speaker: .topic, text: name, project: name))
         case .connect:
             problem = "Folders are connected from the Mac: say it in the conversation there."
+        case .startRiff(let about):
+            startRiff(about: about)
+        case .endRiff:
+            endRiff()
+        case .riffRule(let rule):
+            do {
+                try RiffMode.addRule(rule, root: store.root, device: "iphone")
+                riffRules = RiffMode.rules(root: store.root)
+                add(Turn(device: "iphone", speaker: .note, text: "Riff rule kept: \(rule)", project: project))
+            } catch {
+                problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        case .dropRiffRule(let phrase):
+            if (try? RiffMode.dropRule(phrase, root: store.root, device: "iphone")) == true {
+                riffRules = RiffMode.rules(root: store.root)
+                add(Turn(device: "iphone", speaker: .note, text: phrase.isEmpty ? "Riff rules cleared" : "Dropped the riff rule about \(phrase)", project: project))
+            } else {
+                problem = "No riff rule mentions “\(phrase)”."
+            }
         case .newPack(let name):
             let context = turns
             let gateway = canTalk ? self.gateway : nil
@@ -326,6 +360,43 @@ final class PhoneHome: ObservableObject {
         guard var card, card.items.indices.contains(index) else { return }
         card.items.remove(at: index)
         self.card = card.items.isEmpty ? nil : card
+    }
+
+    // MARK: Riff mode
+
+    func toggleRiff() { riffing ? endRiff() : startRiff(about: nil) }
+
+    func startRiff(about: String?) {
+        guard !riffing else { return }
+        card = nil
+        add(RiffMode.startTurn(device: "iphone", project: isPrivate ? nil : project, about: about))
+    }
+
+    /// Ends the riff and offers what came of it as one save card.
+    func endRiff() {
+        guard riffing else { return }
+        let request = RiffMode.wrapRequest(turns: visibleTurns)
+        add(RiffMode.endTurn(device: "iphone", project: isPrivate ? nil : project))
+        guard let request else { return }
+        let gateway = gateway
+        let project = isPrivate ? nil : project
+        let localOnly = touchesLocalOnly(request.messages.map(\.text).joined())
+        thinking = true
+        reading = "Wrapping up the riff…"
+        Task {
+            defer { thinking = false; reading = nil }
+            do {
+                let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly)
+                if let wrapped = RiffMode.card(from: reply.text, project: project) { card = wrapped } else { problem = "Nothing from the riff to save." }
+            } catch {
+                problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    func removeRiffRule(_ rule: String) {
+        _ = try? RiffMode.dropRule(rule, root: store.root, device: "iphone")
+        riffRules = RiffMode.rules(root: store.root)
     }
 
     // MARK: Private mode
@@ -418,6 +489,7 @@ struct TalkScreen: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if model.isPrivate { privateBanner }
+                if model.riffing { riffBanner }
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
@@ -502,9 +574,11 @@ struct TalkScreen: View {
                 Toggle(isOn: $model.deep) { Label("Think harder", systemImage: "brain") }
                 Toggle(isOn: $model.speak) { Label("Read replies aloud", systemImage: "speaker.wave.2") }
                 Button { model.suggestSave(force: true) } label: { Label("Save that", systemImage: "tray.and.arrow.down") }
-                    .disabled(model.isPrivate)
+                    .disabled(model.isPrivate || model.riffing)
                 Divider()
-                Button { onRiff() } label: { Label("Riff about a project", systemImage: "bubble.left.and.bubble.right") }
+                Button { onRiff() } label: {
+                    Label(model.riffing ? "Wrap up the riff" : "Riff", systemImage: "bubble.left.and.bubble.right")
+                }
                 NavigationLink { AskScreen(store: store, recorder: recorder, onRiff: onRiff) } label: {
                     Label("Search my notes", systemImage: "magnifyingglass")
                 }
@@ -513,6 +587,37 @@ struct TalkScreen: View {
             }
             .accessibilityLabel("More")
         }
+    }
+
+    /// Riffing: your rules as chips (each removable) and Wrap up. Say “rule: …” to add one.
+    private var riffBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                Text("Riffing. Say “rule: …” to add a rule.").font(.footnote.weight(.semibold))
+                Spacer()
+                Button("Wrap up") { model.endRiff() }.font(.footnote.weight(.semibold)).disabled(model.thinking)
+            }
+            .foregroundStyle(Brand.purple)
+            if !model.riffRules.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(model.riffRules, id: \.self) { rule in
+                            HStack(spacing: 4) {
+                                Text(rule).font(.caption).lineLimit(1)
+                                Button { model.removeRiffRule(rule) } label: { Image(systemName: "xmark").font(.caption2) }
+                                    .accessibilityLabel("Drop this rule")
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Capsule().fill(Brand.purple.opacity(0.14)))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Brand.purple.opacity(0.07))
     }
 
     private var privateBanner: some View {
@@ -661,7 +766,8 @@ struct TalkScreen: View {
                     Image(systemName: "plus").font(.system(size: 18, weight: .semibold)).frame(width: 36, height: 44)
                 }
                 .accessibilityLabel("Attach")
-                TextField(model.isPrivate ? "Private…" : "Talk to Broski…", text: $model.draft, axis: .vertical)
+                TextField(model.riffing ? "Riff: say what's on your mind…" : model.isPrivate ? "Private…" : "Talk to Broski…",
+                          text: $model.draft, axis: .vertical)
                     .lineLimit(1...5)
                     .focused($focused)
                     .padding(.vertical, 8)

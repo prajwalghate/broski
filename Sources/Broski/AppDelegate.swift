@@ -115,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(shortcutItem("Ask Broski", #selector(askBroski), spec: app.config.askHotkey))
         menu.addItem(shortcutItem("Help with this", #selector(helpWithThis), spec: app.config.helpHotkey))
-        menu.addItem(item("Riff with Claude", #selector(riff)))
+        menu.addItem(item("Riff", #selector(riff)))
         menu.addItem(item(app.isOnCall ? "Stop call notes" : "Take notes on a call", #selector(callNotes)))
         menu.addItem(item("Check-in now", #selector(checkIn)))
         if let session = app.library.activeSession {
