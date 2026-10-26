@@ -67,6 +67,8 @@ struct RiffModeTests {
         #expect(system.contains("10x"))
         #expect(system.contains("dark patterns"))
         #expect(system.contains("never announce"), "moves are used the way a person would, not named like a menu")
+        #expect(system.contains("120 words") && system.contains("No bold"), "spoken-length replies, no markdown menus")
+        #expect(system.contains("When they've decided something, back it"), "a decision gets backed, not reopened")
         #expect(!RiffMode.moves.isEmpty && Set(RiffMode.moves.map(\.name)).count == RiffMode.moves.count)
         #expect(RiffMode.moves.allSatisfy { !$0.ask.isEmpty && system.contains($0.name.lowercased()) }, "Broski knows every move it can pull in")
         #expect(RiffMode.moves.contains { $0.name == "Pre-mortem" } && RiffMode.moves.contains { $0.name == "Ethics check" })
