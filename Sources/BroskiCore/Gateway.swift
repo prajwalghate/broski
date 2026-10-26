@@ -44,7 +44,7 @@ public struct ModelGateway: Sendable {
     }
 
     /// Sends a request for a role. A local-only conversation that has no local model is refused before anything is sent.
-    public func send(_ request: ModelRequest, role: ModelRole, project: String?, localOnly: Bool = false) async throws
+    public func send(_ request: ModelRequest, role: ModelRole, project: String?, localOnly: Bool = false, task: String? = nil) async throws
         -> (reply: ModelReply, route: ModelRouter.Route) {
         let route = try ModelRouter.route(role, settings: settings, localOnly: localOnly, needs: request.needs,
                                           spentToday: UsageLog.spent(root: root))
@@ -52,7 +52,7 @@ public struct ModelGateway: Sendable {
         if route.pdfAsText { outgoing = Self.pdfsAsText(outgoing) }
         let reply = try await makeConnector(route.provider).send(outgoing, model: route.model)
         try? UsageLog.append(UsageLog.Entry(device: device, role: route.role, provider: route.provider.id, model: route.model,
-                                            project: project, usage: reply.usage), root: root)
+                                            project: project, usage: reply.usage, task: task), root: root)
         return (reply, route)
     }
 

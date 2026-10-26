@@ -81,6 +81,17 @@ struct ModelsSettings: View {
                     }
                     .font(.system(size: 12))
                 }
+                if !summary.byTask.isEmpty {
+                    DisclosureGroup("By task this month") {
+                        ForEach(summary.byTask, id: \.task) { line in
+                            LabeledContent(Self.taskName(line.task)) {
+                                Text("\(line.calls) call\(line.calls == 1 ? "" : "s") · \(Self.dollars(line.usd))").foregroundStyle(.secondary)
+                            }
+                            .font(.system(size: 12))
+                        }
+                    }
+                    .font(.system(size: 12))
+                }
                 Toggle("Daily limit", isOn: Binding(get: { settings.dailyLimitUSD != nil },
                                                     set: { on in change { $0.dailyLimitUSD = on ? 1 : nil } }))
                 if let limit = settings.dailyLimitUSD {
@@ -95,6 +106,25 @@ struct ModelsSettings: View {
         }
         .formStyle(.grouped)
         .onAppear { summary = UsageLog.summary(UsageLog.entries(root: app.root)) }
+    }
+
+    static func taskName(_ task: String) -> String {
+        switch task {
+        case "conversation": return "Conversation"
+        case "review": return "Save cards"
+        case "riff": return "Riffs"
+        case "wrap-up": return "Riff wrap-ups"
+        case "reflection": return "Reflection"
+        case "page": return "Project pages"
+        case "filing": return "Filing notes"
+        case "ask": return "Ask"
+        case "help": return "Help with this"
+        case "call": return "Call notes"
+        case "report": return "Session reports"
+        case "pack": return "Packs"
+        case "key-check": return "Key checks"
+        default: return "Other (before tasks were logged)"
+        }
     }
 
     static func dollars(_ value: Double) -> String {

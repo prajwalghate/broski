@@ -448,7 +448,7 @@ public enum Packs {
     public static func draft(name: String, context: [Turn], gateway: ModelGateway?, root: URL) async throws -> String {
         var pack = template(name: name)
         var drafted = false
-        if let gateway, let (reply, _) = try? await gateway.send(request(name: name, context: context), role: .deep, project: nil),
+        if let gateway, let (reply, _) = try? await gateway.send(request(name: name, context: context), role: .deep, project: nil, task: "pack"),
            let parsed = parse(reply.text, name: name) {
             pack = parsed
             drafted = true

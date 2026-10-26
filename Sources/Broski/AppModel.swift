@@ -245,6 +245,12 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         library.projectRoots = { [weak self] in self?.config.projectRootURLs ?? [] }
         library.brainSettings = { [weak self] in (self?.config.autoCompilePages ?? true, Set(self?.config.localOnlyProjects ?? [])) }
         brain.localOnly = { [weak self] in Set(self?.config.localOnlyProjects ?? []) }
+        // Calls that don't go through the model gateway yet (pages, filing, Ask, help, calls, reports) are logged with
+        // the rest, so Settings › Models shows every dollar.
+        ClaudeClient.onUsage = { [root] model, task, usage in
+            try? UsageLog.append(UsageLog.Entry(device: "mac", role: UsageLog.role(forModel: model), provider: "claude", model: model,
+                                                project: nil, usage: usage, task: task ?? "other"), root: root)
+        }
         capture.onStateChange = { [weak self] in self?.captureChanged() }
         capture.onOpenDashboard = { [weak self] project in self?.showDashboard(project: project) }
         capture.onOpenSettings = { [weak self] in self?.showSettings() }

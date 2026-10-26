@@ -230,7 +230,8 @@ final class PhoneHome: ObservableObject {
         task = Task {
             defer { thinking = false }
             do {
-                let (reply, route) = try await gateway.send(request, role: role, project: project, localOnly: localOnly)
+                let (reply, route) = try await gateway.send(request, role: role, project: project, localOnly: localOnly,
+                                                            task: riff ? "riff" : "conversation")
                 guard wasPrivate == isPrivate else { return }
                 let (text, cited) = Recall.cited(in: reply.text, hits: recall)
                 var sources = cited
@@ -344,7 +345,7 @@ final class PhoneHome: ObservableObject {
         let project = project
         Task {
             do {
-                let (reply, _) = try await gateway.send(request, role: .fast, project: project, localOnly: localOnly)
+                let (reply, _) = try await gateway.send(request, role: .fast, project: project, localOnly: localOnly, task: "review")
                 guard let review = SaveCard.review(reply.text, catalog: store.catalog, decisions: standing) else {
                     if force { problem = "Nothing in the last few turns to save." }
                     return
@@ -410,7 +411,7 @@ final class PhoneHome: ObservableObject {
         Task {
             defer { thinking = false; reading = nil }
             do {
-                let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly)
+                let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly, task: "wrap-up")
                 if let wrapped = RiffMode.card(from: reply.text, project: project) { card = wrapped } else { problem = "Nothing from the riff to save." }
             } catch {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

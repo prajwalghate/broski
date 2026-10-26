@@ -81,6 +81,8 @@ enum Diagnostics {
         if args.contains("--reflect") { return runReflect(note: note) }
         if args.contains("--first-run") { return runFirstRun(note: note) }
         if args.contains("--riff-mode") { return runRiffMode(note: note) }
+        if args.contains("--cache-check") { return runCacheCheck(note: note) }
+        if let i = args.firstIndex(of: "--page-cost"), i + 1 < args.count { return runPageCost(args[i + 1], note: note) }
         if let i = args.firstIndex(of: "--read-link"), i + 1 < args.count {
             return runReadLink(args[i + 1], reply: !args.contains("--no-reply"), note: note)
         }
@@ -381,6 +383,95 @@ enum Diagnostics {
                 note(String(format: "%d calls (%@), $%.4f", spent.count, Set(spent.map(\.model)).sorted().joined(separator: ", "), spent.reduce(0) { $0 + $1.usd }))
             } catch {
                 note("failed: \(error.localizedDescription)")
+            }
+            try? FileManager.default.removeItem(at: root)
+            note("done")
+            done.signal()
+        }
+        while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
+    /// `--page-cost <project>`: rewrites one project's page from its real inputs (as the dashboard would, nothing
+    /// saved) with Sonnet at medium effort (today's setting), Sonnet at low, and Haiku at medium; prints each one's
+    /// tokens and cost and writes the three pages next to the report for reading side by side.
+    static func runPageCost(_ project: String, note: @escaping (String) -> Void) {
+        _ = NSApplication.shared
+        guard let key = Secrets.get(Secrets.claudeKey) else { return note("no Claude key") }
+        // On a copy of the Broski folder, so loading the library (which keeps pages in step) can't touch the real one.
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("broski-page-cost-root", isDirectory: true)
+        try? FileManager.default.removeItem(at: copy)
+        // The installed app's folder choice isn't visible to this binary: iCloud Drive's Broski when the default isn't there.
+        let iCloud = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/Broski")
+        let source = FileManager.default.fileExists(atPath: AppModel.notesRoot.path) ? AppModel.notesRoot : iCloud
+        do { try FileManager.default.copyItem(at: source, to: copy) } catch { return note("couldn't copy the folder: \(error)") }
+        defer { try? FileManager.default.removeItem(at: copy) }
+        let app = AppModel(root: copy)
+        app.library.brainSettings = { (false, Set(app.config.localOnlyProjects)) }
+        app.library.reload()
+        app.library.loadRegistry()
+        let deadline = Date().addingTimeInterval(30)
+        while app.library.readingTrackers && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+        let refs = app.library.pageInputs(project)
+        let previous = ProjectPage.load(project, from: app.store)
+        note("\(project): \(refs.count) inputs (\(refs.filter(\.isTrackerRecord).count) from its tracker), previous page \(previous?.source.rawValue ?? "none")")
+        let used = UsageBox()
+        ClaudeClient.onUsage = { model, _, usage in used.add(model, usage) }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("broski-page-cost", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        note("pages written to \(folder.path)")
+        var done = false
+        Task { @MainActor in
+            for (model, effort) in [(ClaudeModel.brain, "medium"), (ClaudeModel.brain, "low"), (ClaudeModel.fast, "medium")] {
+                let started = Date()
+                do {
+                    let page = try await ProjectPageBuilder.compile(project: project, refs: refs, previous: previous,
+                                                                    client: ClaudeClient(apiKey: key), model: model, effort: effort)
+                    let usage = used.take()
+                    note(String(format: "%@ %@: %.1fs · in %d · out %d · $%.4f · %d sections, %d lines, %d actions",
+                                model, effort, Date().timeIntervalSince(started), usage.input, usage.output,
+                                UsageLog.cost(model: model, usage: usage), page.sections.count,
+                                page.sections.reduce(0) { $0 + $1.lines.count }, page.actions.count))
+                    let file = folder.appendingPathComponent("page-\(project)-\(model)-\(effort).md")
+                    try? page.render().write(to: file, atomically: true, encoding: .utf8)
+                } catch {
+                    note("\(model) \(effort): failed: \(error.localizedDescription)")
+                }
+            }
+            ClaudeClient.onUsage = nil
+            note("done")
+            done = true
+        }
+        while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
+    /// `--cache-check`: three turns of a conversation with some history, in a throwaway folder, printing each turn's
+    /// uncached input, cache reads and cache writes (the second and third should read most of their input from cache).
+    static func runCacheCheck(note: @escaping (String) -> Void) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-cache-\(UUID().uuidString)", isDirectory: true)
+        let gateway = ModelGateway(settings: .defaults, root: root, device: "mac") { id in id == "claude" ? Secrets.get(Secrets.claudeKey) : nil }
+        let start = Date().addingTimeInterval(-3600)
+        let mine = String(repeating: "weekly plans, streaks, coaching tiers. ", count: 20)
+        let broski = String(repeating: "keep the free tier generous and charge for coaching. ", count: 20)
+        var turns: [Turn] = []
+        for i in 0..<12 {
+            let you = i % 2 == 0
+            let text = you ? "Thinking about pricing for the runner app, part \(i): \(mine)" : "Here's a thought on that, part \(i): \(broski)"
+            turns.append(Turn(at: start.addingTimeInterval(Double(i) * 60), device: "mac", speaker: you ? .you : .broski, text: text))
+        }
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            for question in ["So what should the paid tier cost?", "And a student discount?", "Summarise where we landed in one line."] {
+                turns.append(Turn(device: "mac", speaker: .you, text: question))
+                let request = ConversationContext.build(aboutYou: "Prefers short answers. Building a running app.", page: nil, project: nil,
+                                                        turns: turns, isPrivate: false)
+                do {
+                    let (reply, _) = try await gateway.send(request, role: .everyday, project: nil, task: "conversation")
+                    turns.append(Turn(device: "mac", speaker: .broski, text: reply.text))
+                    let u = reply.usage
+                    note("“\(question)” · uncached \(u.input) · cache read \(u.cacheRead) · cache write \(u.cacheWrite) · out \(u.output) · $\(String(format: "%.4f", UsageLog.cost(model: ClaudeModel.brain, usage: u)))")
+                } catch {
+                    note("failed: \(error.localizedDescription)")
+                }
             }
             try? FileManager.default.removeItem(at: root)
             note("done")
@@ -952,5 +1043,26 @@ private final class Scenario {
         guard !(afterFinal && !startWhenFinal) else { return }
         startWhenFinal = false
         startTask("B", punctuation: true, replay: Date().timeIntervalSince(wakeAt) + 2.5)
+    }
+}
+
+/// Adds up what the measured calls used.
+final class UsageBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var total = ModelUsage()
+
+    func add(_ model: String, _ usage: ModelUsage) {
+        lock.lock()
+        defer { lock.unlock() }
+        total = ModelUsage(input: total.input + usage.input, output: total.output + usage.output,
+                           cacheRead: total.cacheRead + usage.cacheRead, cacheWrite: total.cacheWrite + usage.cacheWrite)
+    }
+
+    func take() -> ModelUsage {
+        lock.lock()
+        defer { lock.unlock() }
+        let out = total
+        total = ModelUsage()
+        return out
     }
 }

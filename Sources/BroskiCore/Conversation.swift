@@ -469,14 +469,20 @@ public enum ConversationContext {
             }
         }
 
-        // The newest turns that fit, oldest first.
-        var kept: [Turn] = []
+        // The newest turns that fit, oldest first. Past the budget the oldest go in steps of eight, so the start of the
+        // conversation (the cached part) stays the same for several turns instead of changing every turn.
+        let said = turns.filter { $0.speaker == .you || $0.speaker == .broski }
+        var start = said.count
         var used = 0
-        for turn in turns.reversed() where turn.speaker == .you || turn.speaker == .broski {
-            if used + turn.text.count > maxTurnChars { break }
-            used += turn.text.count
-            kept.insert(turn, at: 0)
+        for index in said.indices.reversed() {
+            if used + said[index].text.count > maxTurnChars { break }
+            used += said[index].text.count
+            start = index
         }
+        // Only when that still keeps at least half of what fits (very long turns just trim one at a time).
+        let stepped = (start + 7) / 8 * 8
+        if start > 0, said.count - stepped >= max(2, (said.count - start) / 2) { start = stepped }
+        let kept = said.isEmpty ? [] : Array(said[min(start, said.count - 1)...])
         // Alternating roles, starting and ending with the user.
         var messages: [ModelMessage] = []
         for turn in kept {
@@ -500,6 +506,6 @@ public enum ConversationContext {
             messages[messages.count - 1] = ModelMessage(role: .user, parts: last.parts + attachments)
         }
         let remembered = !isPrivate && (aboutYou != nil || page != nil || !decisions.isEmpty)
-        return ModelRequest(system: system, messages: messages, maxTokens: 2000, cacheSystem: remembered)
+        return ModelRequest(system: system, messages: messages, maxTokens: 2000, cacheSystem: remembered, cacheHistory: !isPrivate)
     }
 }

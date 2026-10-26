@@ -20,7 +20,7 @@ hold ⌥⇧B  →  "in the strado project, add a todo: rotate the API keys"  →
   - **It learns.** When the Mac is idle, reflection rereads what *you* said (never its own replies, files or local-only projects) and updates what it knows about you. Every change is logged with why and can be undone (What Broski knows › Reflection).
   - **New projects by talking.** Describe something new and Broski proposes a project: one tap sets up its folder, a tracker with the packs that fit (web, web3, ai, mobile, personal, or your own: "new pack: game dev"), a first note, and setup drafts (`CLAUDE.md`, prompts, agents). "Connect ~/code/x" ties a repo to a project, read-only.
   - **Command center** per project in the dashboard: its packs' widgets, filled from your notes, decisions and tracker sections.
-  - **Any model, by role** (Settings › Models): fast, everyday and deep each on Claude, any OpenAI-compatible server (Ollama, LM Studio, OpenRouter…), or Apple's on-device model; local-only projects use only models on the device. A daily limit and spend by model are there too.
+  - **Any model, by role** (Settings › Models): fast, everyday and deep each on Claude, any OpenAI-compatible server (Ollama, LM Studio, OpenRouter…), or Apple's on-device model; local-only projects use only models on the device. A daily limit, and this month's spend by model and by task (conversation, save cards, riffs, project pages, filing, Ask…), are there too: every call, including the older direct ones, is logged.
   - **Automations** (Settings › Connections): when a project changes in a way you name, a notification, a webhook post, or both.
   - Someone new gets a first conversation that gets to know them, and a card to pick a model when there isn't one.
 - **Capture anything, anywhere.**

@@ -53,6 +53,14 @@ public struct ProjectPage: Equatable {
 
     // MARK: Fingerprint
 
+    /// Whether Claude should rewrite a page on its own now (the Refresh button always does): a page it never wrote is
+    /// due; after that, changed notes wait six hours from the last rewrite, and tracker-only changes (a thread pushing
+    /// again) a day. The rules page keeps it current in between, at no cost.
+    public static func rewriteDue(compiled: Date?, notesChanged: Bool, now: Date = Date()) -> Bool {
+        guard let compiled else { return true }
+        return now.timeIntervalSince(compiled) >= (notesChanged ? 6 : 24) * 3600
+    }
+
     public static func fingerprint(_ refs: [NoteRef]) -> String {
         var hash: UInt64 = 1469598103934665603
         for ref in refs.sorted(by: { $0.id < $1.id }) {
@@ -284,7 +292,8 @@ public enum ProjectPageBuilder {
     }()
 
     /// The page compiled by Claude from the project's notes. Citations that don't match a real note are dropped.
-    public static func compile(project: String, refs: [NoteRef], previous: ProjectPage?, client: ClaudeClient) async throws -> ProjectPage {
+    public static func compile(project: String, refs: [NoteRef], previous: ProjectPage?, client: ClaudeClient,
+                               model: String = ClaudeModel.brain, effort: String = "medium") async throws -> ProjectPage {
         let known = Set(refs.map(\.id))
         let listed = refs.sorted { $0.date > $1.date }.prefix(160)
         var lines = ["Project: \(project)", "Today: \(Date().formatted(date: .abbreviated, time: .omitted))", "", "Notes (newest first):"]
@@ -297,10 +306,10 @@ public enum ProjectPageBuilder {
         if let previous, !previous.summary.isEmpty {
             lines += ["", "Previous summary (update it, don't repeat it blindly): \(previous.summary)"]
         }
-        let brain = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain)
+        let brain = ClaudeClient(apiKey: client.apiKey, model: model, task: "page")
         let out = try await brain.sendJSON(Compiled.self, system: system,
                                            messages: [["role": "user", "content": [ClaudeClient.text(lines.joined(separator: "\n"))]]],
-                                           schema: schema, effort: "medium", maxTokens: 16000, timeout: 180)
+                                           schema: schema, effort: effort, maxTokens: 16000, timeout: 180)
         // Known ids only, each once, in order: a cite listed twice would make an action act on one note twice.
         func cites(_ ids: [String]) -> [String] {
             var seen = Set<String>()

@@ -105,7 +105,7 @@ public enum Ask {
             lines.append("[\(r.id)] \(origin) · \(r.date == .distantPast ? "undated" : day.string(from: r.date)) · \(r.project ?? "Inbox") · \(r.open ? "open" : "not open") · \(r.title)"
                          + (r.body.isEmpty ? "" : " — \(r.body.replacingOccurrences(of: "\n", with: " ").prefix(r.source == nil ? 700 : 1400))"))
         }
-        let brain = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain)
+        let brain = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain, task: "ask")
         let reply = try await brain.sendJSON(Reply.self, system: system,
                                              messages: [["role": "user", "content": [ClaudeClient.text(lines.joined(separator: "\n"))]]],
                                              schema: schema, effort: "medium", maxTokens: 8000, timeout: 120)

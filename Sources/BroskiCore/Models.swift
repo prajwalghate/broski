@@ -242,17 +242,21 @@ public struct ModelRequest: Equatable, Sendable {
     public var maxTokens: Int
     /// Mark the system prompt for caching (memory and a project page reused across turns).
     public var cacheSystem: Bool
+    /// Also mark the conversation up to the previous reply: the next turn sends it unchanged, so it's read from the
+    /// cache instead of billed again.
+    public var cacheHistory: Bool
     /// Claude's effort setting; other providers ignore it.
     public var effort: String
     /// A JSON schema the reply must match, as JSON text; nil for free text.
     public var schemaJSON: String?
 
-    public init(system: String, messages: [ModelMessage], maxTokens: Int = 4000, cacheSystem: Bool = false,
+    public init(system: String, messages: [ModelMessage], maxTokens: Int = 4000, cacheSystem: Bool = false, cacheHistory: Bool = false,
                 effort: String = "low", schemaJSON: String? = nil) {
         self.system = system
         self.messages = messages
         self.maxTokens = maxTokens
         self.cacheSystem = cacheSystem
+        self.cacheHistory = cacheHistory
         self.effort = effort
         self.schemaJSON = schemaJSON
     }
@@ -333,12 +337,24 @@ public struct AnthropicConnector: ModelConnector {
             "system": request.cacheSystem
                 ? [["type": "text", "text": request.system, "cache_control": ["type": "ephemeral"]]] as Any
                 : request.system,
-            "messages": request.messages.map { ["role": $0.role.rawValue, "content": $0.parts.map(block)] },
+            "messages": messages(for: request),
             "output_config": output,
         ]
         // Haiku has no server-side fallback.
         if !model.contains("haiku") { body["fallbacks"] = "default" }
         return body
+    }
+
+    /// The messages as content blocks; with `cacheHistory`, a cache marker on the last block of the previous reply
+    /// (everything up to there is the same next turn), never on the new message.
+    static func messages(for request: ModelRequest) -> [[String: Any]] {
+        var messages: [[String: Any]] = request.messages.map { ["role": $0.role.rawValue, "content": $0.parts.map(block)] }
+        if request.cacheHistory, let index = request.messages.indices.dropLast().last(where: { request.messages[$0].role == .assistant }),
+           var blocks = messages[index]["content"] as? [[String: Any]], !blocks.isEmpty {
+            blocks[blocks.count - 1]["cache_control"] = ["type": "ephemeral"]
+            messages[index]["content"] = blocks
+        }
+        return messages
     }
 
     static func block(_ part: ModelPart) -> [String: Any] {
@@ -492,9 +508,11 @@ public enum UsageLog {
         public var project: String?
         public var usage: ModelUsage
         public var usd: Double
+        /// What the call was for: conversation, review, page, filing, ask, riff, reflection… (nil in older lines).
+        public var task: String?
 
         public init(at: Date = Date(), device: String, role: ModelRole, provider: String, model: String, project: String?,
-                    usage: ModelUsage) {
+                    usage: ModelUsage, task: String? = nil) {
             self.at = at
             self.device = device
             self.role = role
@@ -503,6 +521,7 @@ public enum UsageLog {
             self.project = project
             self.usage = usage
             self.usd = UsageLog.cost(model: model, usage: usage)
+            self.task = task
         }
     }
 
@@ -552,12 +571,27 @@ public enum UsageLog {
             public var usd: Double
         }
 
+        public struct TaskLine: Equatable, Sendable {
+            public var task: String
+            public var calls: Int
+            public var usd: Double
+        }
+
         public var today: Double
         public var month: Double
         /// This month by model, most spent first.
         public var byModel: [Line]
+        /// This month by what the calls were for, most spent first.
+        public var byTask: [TaskLine]
 
-        public static let none = Summary(today: 0, month: 0, byModel: [])
+        public static let none = Summary(today: 0, month: 0, byModel: [], byTask: [])
+    }
+
+    /// A call's role from its model, for calls that don't say (Claude's tiers; anything else counts as everyday).
+    public static func role(forModel model: String) -> ModelRole {
+        if model.contains("haiku") { return .fast }
+        if model.contains("opus") || model.contains("fable") || model.contains("mythos") { return .deep }
+        return .everyday
     }
 
     /// Today, this calendar month, and this month by model, every device together.
@@ -568,8 +602,12 @@ public enum UsageLog {
         let lines = Dictionary(grouping: month, by: \.model).map { model, all in
             Summary.Line(model: model, calls: all.count, usd: all.reduce(0) { $0 + $1.usd })
         }
+        let tasks = Dictionary(grouping: month, by: { $0.task ?? "other" }).map { task, all in
+            Summary.TaskLine(task: task, calls: all.count, usd: all.reduce(0) { $0 + $1.usd })
+        }
         return Summary(today: today, month: month.reduce(0) { $0 + $1.usd },
-                       byModel: lines.sorted { $0.usd == $1.usd ? $0.model < $1.model : $0.usd > $1.usd })
+                       byModel: lines.sorted { $0.usd == $1.usd ? $0.model < $1.model : $0.usd > $1.usd },
+                       byTask: tasks.sorted { $0.usd == $1.usd ? $0.task < $1.task : $0.usd > $1.usd })
     }
 
     /// Spend on the calendar day of `day`, every device together.

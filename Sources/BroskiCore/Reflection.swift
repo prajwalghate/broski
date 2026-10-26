@@ -188,7 +188,7 @@ public enum Reflection {
             return Proposal()
         }
         let known = Memory.remembered(root: root)
-        let (reply, _) = try await gateway.send(request(turns: turns, known: known, hidden: hidden), role: .deep, project: nil)
+        let (reply, _) = try await gateway.send(request(turns: turns, known: known, hidden: hidden), role: .deep, project: nil, task: "reflection")
         let proposal = parse(reply.text, known: known)
         try apply(proposal, root: root, device: device, at: now)
         state = State(lastRun: now, through: turns.map(\.at).max() ?? state.through)

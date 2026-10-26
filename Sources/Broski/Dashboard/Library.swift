@@ -72,6 +72,8 @@ final class Library: ObservableObject {
     /// Whether to keep pages current with Claude, and which projects never go to Claude.
     var brainSettings: () -> (autoCompile: Bool, localOnly: Set<String>) = { (true, []) }
     private var pendingCompiles: Set<String> = []
+    /// Each project's notes (not its tracker digest) when Claude last rewrote its page, this session.
+    private var compiledNotes: [String: String] = [:]
     private var compileTask: Task<Void, Never>?
     private var compileRunning = false
 
@@ -308,7 +310,14 @@ final class Library: ObservableObject {
                 // Keep Claude's last page on screen until the new one is ready.
                 fresh[project.name] = existing
             }
-            if canCompile { pendingCompiles.insert(project.name) }
+            // Claude rewrites a page at most every 6 hours when its notes change, and once a day when only its tracker
+            // moved; the rules page above keeps it current in between, and Refresh rewrites it at once.
+            if canCompile {
+                let notes = ProjectPage.fingerprint(refs.filter { !$0.isTrackerRecord })
+                let notesChanged = compiledNotes[project.name].map { $0 != notes } ?? true
+                let lastRewrite = existing?.source == .claude ? existing?.compiled : nil
+                if ProjectPage.rewriteDue(compiled: lastRewrite, notesChanged: notesChanged) { pendingCompiles.insert(project.name) }
+            }
         }
         pages = fresh
         scheduleCompiles(after: 20)
@@ -353,6 +362,7 @@ final class Library: ObservableObject {
                 }
                 try page.save(to: store)
                 pages[name] = page
+                compiledNotes[name] = ProjectPage.fingerprint(refs.filter { !$0.isTrackerRecord })
                 pageProblem = nil
                 Log.info("Living page updated: \(name)")
             } catch {

@@ -11,10 +11,26 @@ public enum ClaudeModel {
 public struct ClaudeClient {
     public var apiKey: String
     public var model: String
+    /// What calls through this client are for, in the usage log ("page", "filing", "ask"…).
+    public var task: String?
 
-    public init(apiKey: String, model: String = ClaudeModel.deep) {
+    /// Sonnet unless a caller picks otherwise, so nothing lands on Opus by accident.
+    public init(apiKey: String, model: String = ClaudeModel.brain, task: String? = nil) {
         self.apiKey = apiKey
         self.model = model
+        self.task = task
+    }
+
+    /// Called with what each request used (model, task, tokens), so the app logs these calls with the gateway's.
+    public nonisolated(unsafe) static var onUsage: (@Sendable (_ model: String, _ task: String?, _ usage: ModelUsage) -> Void)?
+
+    /// The tokens a Messages API response says it used, cache reads and writes included.
+    public static func usage(from data: Data) -> ModelUsage? {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let usage = json["usage"] as? [String: Any] else { return nil }
+        func count(_ key: String) -> Int { (usage[key] as? Int) ?? 0 }
+        return ModelUsage(input: count("input_tokens"), output: count("output_tokens"), cacheRead: count("cache_read_input_tokens"),
+                          cacheWrite: count("cache_creation_input_tokens"))
     }
 
     public enum Failure: LocalizedError {
@@ -76,7 +92,10 @@ public struct ClaudeClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        let reply = try Self.parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        // Billed whether or not the reply turns out usable, so it's logged first.
+        if status == 200, let usage = Self.usage(from: data) { Self.onUsage?(model, task, usage) }
+        let reply = try Self.parse(data, status: status)
         guard reply.truncated else { return reply.text }
         // Half a JSON object is never usable; half an answer is, as long as it says it's cut off.
         if schema != nil { throw Failure.truncated }
@@ -119,7 +138,7 @@ public struct ClaudeClient {
     /// Checks the key with a tiny request. Thinking counts toward max_tokens, so the cap leaves room for it.
     public func verify() async throws {
         do {
-            _ = try await ClaudeClient(apiKey: apiKey, model: ClaudeModel.fast)
+            _ = try await ClaudeClient(apiKey: apiKey, model: ClaudeModel.fast, task: "key-check")
                 .send(system: "Reply with OK.", content: [Self.text("ping")], effort: "low", maxTokens: 1024, timeout: 30)
         } catch Failure.empty, Failure.truncated, Failure.refused {
             // Still a 200: the key authenticated and has credit, which is all this checks.
@@ -257,7 +276,7 @@ public enum Interpreter {
         }
         if request.attachmentCount > 0 { lines.append("Screenshots attached: \(request.attachmentCount)") }
         // Filing is routine, so it goes to Haiku: quick, and cheap on your key.
-        let fast = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.fast)
+        let fast = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.fast, task: "filing")
         let reply = try await fast.send(system: system, content: [ClaudeClient.text(lines.joined(separator: "\n"))],
                                         schema: schema, effort: "low", maxTokens: 4000)
         guard let data = reply.data(using: .utf8) else { throw ClaudeClient.Failure.badResponse("encoding") }
@@ -343,6 +362,8 @@ public enum ReportWriter {
 
     /// `images` maps attachment paths to their bytes (JPEG or PNG) to show Claude.
     public static func write(_ session: Session, images: [String: (data: Data, mediaType: String)], with client: ClaudeClient) async throws -> SessionReport {
+        // Sonnet reads screenshots and writes reports well; these used to run on Opus by default, at twice the price.
+        let client = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain, task: "report")
         var content: [[String: Any]] = [ClaudeClient.text("Session: \(session.title) (\(session.kind.label)), project: \(session.project ?? "none"), started \(session.started)")]
         for (index, entry) in session.entries.enumerated() {
             var line = "Capture \(index + 1) at \(Session.entryStamp.string(from: entry.time)): \(entry.text.isEmpty ? "(no comment)" : entry.text)"
