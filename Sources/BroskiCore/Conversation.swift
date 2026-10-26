@@ -99,6 +99,41 @@ public struct ConversationStore: Sendable {
     }
 
     /// The last `limit` turns (of one project, when given), oldest first, reaching back across days.
+    /// The latest two months' files, by name, size and date, including ones iCloud hasn't fetched yet. It changes
+    /// whenever any device adds a turn, so a screen can check often without re-reading every turn.
+    public func fingerprint() -> String {
+        let fm = FileManager.default
+        let months = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).filter { !$0.hasPrefix(".") }.sorted().suffix(2)
+        return months.flatMap { month -> [String] in
+            let dir = folder.appendingPathComponent(month, isDirectory: true)
+            return ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? [])
+                .map { url in
+                    let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+                    return "\(month)/\(url.lastPathComponent):\(values?.fileSize ?? 0):\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+                }
+        }
+        .sorted().joined(separator: "|")
+    }
+
+    /// Asks iCloud for the newest versions of the latest two months' files (another device's new day, or turns it
+    /// just added). Harmless where the folder isn't in iCloud.
+    public func requestLatest() {
+        let fm = FileManager.default
+        let months = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).filter { !$0.hasPrefix(".") }.sorted().suffix(2)
+        for month in months {
+            let dir = folder.appendingPathComponent(month, isDirectory: true)
+            for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] {
+                if name.hasPrefix("."), name.hasSuffix(".icloud") {
+                    try? fm.startDownloadingUbiquitousItem(at: dir.appendingPathComponent(String(name.dropFirst().dropLast(7))))
+                    continue
+                }
+                let url = dir.appendingPathComponent(name)
+                let status = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]).ubiquitousItemDownloadingStatus
+                if let status, status != .current { try? fm.startDownloadingUbiquitousItem(at: url) }
+            }
+        }
+    }
+
     public func recent(_ limit: Int, project: String? = nil) -> [Turn] {
         var kept: [Turn] = []
         for day in dayKeys() {

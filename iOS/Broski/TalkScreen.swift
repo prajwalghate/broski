@@ -45,6 +45,22 @@ final class PhoneHome: ObservableObject {
         reload()
     }
 
+    private var lastFingerprint = ""
+
+    /// Checks iCloud for what your Mac said since (cheap: file sizes and dates), and shows it, unless a reply is on
+    /// its way. Talk calls this every few seconds while it's on screen.
+    func refreshFromDisk() {
+        guard !thinking else { return }
+        conversation.requestLatest()
+        let fingerprint = conversation.fingerprint()
+        guard fingerprint != lastFingerprint else { return }
+        lastFingerprint = fingerprint
+        let fresh = conversation.recent(80)
+        guard fresh.map(\.id) != turns.map(\.id) else { return }
+        turns = fresh
+        recallIndex = nil
+    }
+
     /// The recent conversation from every device.
     func reload() {
         guard !thinking else { return }
@@ -558,6 +574,13 @@ struct TalkScreen: View {
         }
         .onAppear { model.reload() }
         .onDisappear { model.stopSpeaking() }
+        // Talking on both devices: what your Mac says shows up here within a few seconds of iCloud bringing it.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                model.refreshFromDisk()
+            }
+        }
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
@@ -664,6 +687,9 @@ struct TalkScreen: View {
                         .background(RoundedRectangle(cornerRadius: 16).fill(turn.speaker == .you ? Brand.purple.opacity(0.15) : Color(.secondarySystemBackground)))
                         .fixedSize(horizontal: false, vertical: true)
                     if turn.speaker == .broski { Spacer(minLength: 48) }
+                }
+                if turn.speaker == .you, turn.device != "iphone" {
+                    Text("on your Mac").font(.caption2).foregroundStyle(.secondary)
                 }
                 if let files = turn.files, !files.isEmpty {
                     HStack(spacing: 6) {

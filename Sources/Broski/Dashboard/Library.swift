@@ -91,11 +91,14 @@ final class Library: ObservableObject {
         guard watcher == nil else { return }
         try? FileManager.default.createDirectory(at: store.projectsDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: store.inboxDir, withIntermediateDirectories: true)
-        // Broski's own writes (pages, settings, logs) and Finder's .DS_Store change no note, so they don't reload.
+        // Broski's own writes (pages, settings, logs) and Finder's .DS_Store change no note, so they don't reload; nor
+        // do the conversation, usage, memory and vault files (the conversation has its own refresh).
         let ignored: Set<String> = ["PROJECT.md", "config.json", ".DS_Store"]
+        let notNotes = ["/.broski/", "/conversations/", "/usage/", "/memory/", "/vault/"]
         watcher = FileWatcher(url: store.root) { [weak self] paths in
-            let notes = paths.filter { !$0.contains("/.broski/") && !ignored.contains(($0 as NSString).lastPathComponent) }
+            let notes = paths.filter { path in !notNotes.contains { path.contains($0) } && !ignored.contains((path as NSString).lastPathComponent) }
             if paths.isEmpty || !notes.isEmpty { self?.scheduleReload() }
+            if paths.contains(where: { $0.contains("/conversations/") }) { self?.scheduleConversationRefresh() }
         }
         loadRegistry()
         reload()
@@ -103,6 +106,18 @@ final class Library: ObservableObject {
     }
 
     private var reloadTask: Task<Void, Never>?
+    private var conversationTask: Task<Void, Never>?
+    /// The conversation's files changed (your iPhone said something, through iCloud).
+    var onConversationsChanged: (() -> Void)?
+
+    private func scheduleConversationRefresh() {
+        conversationTask?.cancel()
+        conversationTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            self?.onConversationsChanged?()
+        }
+    }
 
     /// One reload for a burst of file events (a save, iCloud syncing a folder): a reload re-reads every note.
     private func scheduleReload() {

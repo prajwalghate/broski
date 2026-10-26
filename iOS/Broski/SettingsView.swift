@@ -61,9 +61,9 @@ struct SettingsView: View {
                         if let keyStatus { Text(keyStatus).font(.footnote).foregroundStyle(.secondary) }
                     }
                 } header: {
-                    Text("Claude (optional)")
+                    Text("Claude")
                 } footer: {
-                    Text("With a key, Claude tidies notes and picks the project, type and priority, like on the Mac. Without one, Broski's built-in rules do it. The key stays in this iPhone's Keychain.")
+                    Text("Use the same key as on your Mac. With it, Broski talks with you in Talk, riffs, reads links you share, and tidies notes. Keys never sync: it stays in this iPhone's Keychain.")
                 }
 
                 Section {

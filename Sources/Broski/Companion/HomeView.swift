@@ -75,6 +75,15 @@ final class HomeModel: ObservableObject {
         if topic == nil { topic = turns.last?.topic }
     }
 
+    /// The conversation's files changed on disk (your iPhone said something): show it, unless a reply is on its way.
+    func refreshFromDisk() {
+        guard !thinking else { return }
+        let fresh = store.recent(80)
+        guard fresh.map(\.id) != turns.map(\.id) else { return }
+        turns = fresh
+        recallIndex = nil
+    }
+
     var visibleTurns: [Turn] {
         if isPrivate { return privateTurns }
         guard let thread else { return turns }
@@ -922,6 +931,9 @@ struct HomeView: View {
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .background(RoundedRectangle(cornerRadius: 14).fill(Brand.purple.opacity(0.15)))
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if turn.device != "mac" {
+                    Text("on your iPhone").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 if let files = turn.files, !files.isEmpty {
                     HStack(spacing: 6) {

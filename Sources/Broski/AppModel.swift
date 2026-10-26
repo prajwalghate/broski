@@ -49,6 +49,8 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         }
         model.firstRunDone = { [weak self] in await self?.reflector.run() ?? "" }
         model.openVault = { [weak self] note in self?.showVault(adding: note) }
+        // Your iPhone's side of the conversation shows up in the open window as iCloud brings it.
+        library.onConversationsChanged = { [weak model] in model?.refreshFromDisk() }
         return model
     }()
     private lazy var callModel = CallModel(library: library, brain: brain, transcription: transcription)

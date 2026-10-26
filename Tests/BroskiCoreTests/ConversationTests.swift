@@ -151,3 +151,26 @@ struct ConversationTests {
         #expect(request.messages.first?.role == .user)
     }
 }
+
+/// Talking on two devices at once: each writes its own file, and a cheap fingerprint tells a screen when the other
+/// device has said something, without re-reading every turn.
+@Suite("Both devices at once")
+struct BothDevicesTests {
+    @Test("the fingerprint changes when any device adds a turn, and only then")
+    func fingerprint() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-both-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let mac = ConversationStore(root: root, device: "mac")
+        let phone = ConversationStore(root: root, device: "iphone")
+        try mac.append(Turn(device: "mac", speaker: .you, text: "Started on the Mac"))
+        let before = phone.fingerprint()
+        #expect(phone.fingerprint() == before, "nothing new, nothing changes")
+        try phone.append(Turn(device: "iphone", speaker: .you, text: "Carried on from the phone"))
+        let after = mac.fingerprint()
+        #expect(after != before)
+        #expect(mac.recent(10).map(\.device) == ["mac", "iphone"])
+        try mac.append(Turn(device: "mac", speaker: .broski, text: "Got both"))
+        #expect(phone.fingerprint() != after)
+    }
+}
