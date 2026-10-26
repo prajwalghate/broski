@@ -1,7 +1,7 @@
 import Foundation
 
 /// One change between two reads of a tracker: a record new, closed, reopened, re-statused, decided, attested or gone.
-public struct ChangeEvent: Codable, Equatable {
+public struct ChangeEvent: Codable, Equatable, Sendable {
     public var at: Date
     public var project: String
     public var source: String
