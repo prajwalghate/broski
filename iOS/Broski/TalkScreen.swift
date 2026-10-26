@@ -579,6 +579,13 @@ struct TalkScreen: View {
                 Button { onRiff() } label: {
                     Label(model.riffing ? "Wrap up the riff" : "Riff", systemImage: "bubble.left.and.bubble.right")
                 }
+                if model.riffing {
+                    Menu {
+                        ForEach(RiffMode.moves, id: \.name) { move in
+                            Button(move.name) { model.draft = move.ask; model.send() }
+                        }
+                    } label: { Label("Thinking moves", systemImage: "sparkles") }
+                }
                 NavigationLink { AskScreen(store: store, recorder: recorder, onRiff: onRiff) } label: {
                     Label("Search my notes", systemImage: "magnifyingglass")
                 }

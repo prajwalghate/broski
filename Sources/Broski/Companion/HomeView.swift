@@ -736,9 +736,17 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: "bubble.left.and.bubble.right.fill").foregroundStyle(Brand.purple)
-                Text("Riffing. Broski builds on your ideas, pushes back, asks one question at a time.")
+                Text("Riffing. Broski builds on your ideas, brings facts and the 10x version, pushes back, keeps it honest.")
                     .font(.system(size: 12))
                 Spacer()
+                Menu("Moves") {
+                    ForEach(RiffMode.moves, id: \.name) { move in
+                        Button(move.name) { model.draft = move.ask; model.send() }
+                    }
+                }
+                .menuStyle(.borderlessButton).fixedSize().controlSize(.small)
+                .disabled(model.thinking)
+                .help("Thinking moves: pre-mortem, first principles, 10x, ethics check and more")
                 Button("Rules") { showingRules.toggle() }
                     .controlSize(.small)
                     .help("The brainstorming rules, and yours")
@@ -1023,11 +1031,12 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 if model.riffing {
-                    ForEach(["Give me three directions", "Poke holes in this", "What's the simplest version?"], id: \.self) { ask in
-                        chip(ask) {
-                            model.draft = ask
+                    ForEach(RiffMode.moves.filter { ["Pre-mortem", "10x it", "First principles", "Ethics check"].contains($0.name) }, id: \.name) { move in
+                        chip(move.name) {
+                            model.draft = move.ask
                             model.send()
                         }
+                        .help(move.ask)
                     }
                     chip("Wrap up") { model.endRiff() }
                 } else {

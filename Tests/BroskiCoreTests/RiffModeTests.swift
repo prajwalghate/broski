@@ -59,6 +59,18 @@ struct RiffModeTests {
         #expect(!talking.system.contains("riff mode"))
     }
 
+    @Test("the riff brief: proactive, fact-driven without inventing anything, ambitious, honest; and a toolkit of moves")
+    func brief() {
+        let system = RiffMode.system(rules: [])
+        #expect(system.contains("Don't wait to be asked"))
+        #expect(system.contains("never invent"))
+        #expect(system.contains("10x"))
+        #expect(system.contains("dark patterns"))
+        #expect(!RiffMode.moves.isEmpty && Set(RiffMode.moves.map(\.name)).count == RiffMode.moves.count)
+        #expect(RiffMode.moves.allSatisfy { !$0.ask.isEmpty && system.contains($0.name.lowercased()) }, "Broski knows every move it can pull in")
+        #expect(RiffMode.moves.contains { $0.name == "Pre-mortem" } && RiffMode.moves.contains { $0.name == "Ethics check" })
+    }
+
     @Test("a riff is on from its start marker until its end marker, across restarts")
     func active() {
         var turns = [Turn(device: "mac", speaker: .you, text: "hi")]
@@ -88,7 +100,7 @@ struct RiffModeTests {
         #expect(card.items[4].title == "Open question: What cap?")
         #expect(RiffMode.card(from: "nope", project: nil) == nil)
         let many = #"{"title":"t","summary":"s","ideas":["1","2","3","4","5","6","7","8"],"decisions":[],"todos":[],"questions":["a","b","c","d"]}"#
-        #expect(RiffMode.card(from: many, project: nil)?.items.count == 1 + 6 + 3, "short enough to scan")
+        #expect(RiffMode.card(from: many, project: nil)?.items.count == 1 + 4 + 2, "short enough to scan")
         #expect(RiffMode.wrapRequest(turns: [Turn(device: "mac", speaker: .you, text: "no riff here")]) == nil)
     }
 
