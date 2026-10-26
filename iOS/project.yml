@@ -44,6 +44,7 @@ targets:
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Broski records what you say while you talk to it and turns it into text on your iPhone."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Broski turns what you say into notes, on your iPhone when it can."
         INFOPLIST_KEY_NSCameraUsageDescription: "Take a photo to attach to a note."
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "Open your private vault with Face ID instead of typing your passphrase."
   BroskiWidgets:
     type: app-extension
     platform: iOS

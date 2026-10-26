@@ -40,6 +40,8 @@ final class HomeModel: ObservableObject {
     var useAppleModel: () -> Void = {}
     /// The first run's third answer is in: reflect now, so what they said is remembered from the start.
     var firstRunDone: () async -> String = { "" }
+    /// Opens the private vault, with a note to add once it's open.
+    var openVault: (String?) -> Void = { _ in }
     private let root: URL
     private let config: () -> BroskiConfig
     private let synthesizer = AVSpeechSynthesizer()
@@ -381,6 +383,12 @@ final class HomeModel: ObservableObject {
         case .switchProject(let name):
             project = name
             add(Turn(device: "mac", speaker: .topic, text: name, project: name))
+        case .openVault:
+            openVault(nil)
+        case .toVault(let secret):
+            // Straight to the vault: never sent to a model, never kept in the conversation.
+            openVault(secret)
+            add(Turn(device: "mac", speaker: .note, text: "Sent to your private vault (not kept here)", project: project))
         case .startRiff(let about):
             startRiff(about: about)
         case .endRiff:

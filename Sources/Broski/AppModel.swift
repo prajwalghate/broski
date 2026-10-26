@@ -48,6 +48,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             self?.update { $0.models = ModelSetup.appleOnDevice($0.models ?? .defaults) }
         }
         model.firstRunDone = { [weak self] in await self?.reflector.run() ?? "" }
+        model.openVault = { [weak self] note in self?.showVault(adding: note) }
         return model
     }()
     private lazy var callModel = CallModel(library: library, brain: brain, transcription: transcription)
@@ -539,6 +540,29 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         return reflector
     }()
 
+    private(set) lazy var vaultModel: VaultSession = {
+        let session = VaultSession(root: root)
+        // The vault locks when the Mac sleeps or the screen locks.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in session.lock() }
+        }
+        DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
+            Task { @MainActor in session.lock() }
+        }
+        return session
+    }()
+
+    /// The private vault. Its window is left out of screenshots and screen recording, and closing it locks the vault.
+    /// A note said as "vault: …" waits (in memory only) until the vault is open.
+    func showVault(adding note: String? = nil) {
+        if let note { vaultModel.queue(note) }
+        showWindow("vault", title: "Private vault", size: NSSize(width: 720, height: 520), resizable: true) {
+            VaultView(model: self.vaultModel)
+        }
+        windows["vault"]?.sharingType = .none
+        vaultModel.refresh()
+    }
+
     /// What Broski knows about you, and every project's decisions.
     func showMemory() {
         showWindow("memory", title: "What Broski knows", size: NSSize(width: 560, height: 560), resizable: true) {
@@ -679,6 +703,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
               let id = windows.first(where: { $0.value === window })?.key else { return }
         windows[id] = nil
         // Ask's mic button can still stop the mic while Ask is open, and it may be Ask's dictation.
+        if id == "vault" { vaultModel.lock() }
         if id == "home" {
             stopVoice { [weak self] text in
                 guard let self else { return }

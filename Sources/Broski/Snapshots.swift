@@ -239,6 +239,25 @@ enum Snapshots {
         render(HomeView(model: riffing, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home-riff")
         try? FileManager.default.removeItem(at: riffRoot)
 
+        // The private vault: making one, locked, and open (a throwaway vault, quick key stretching, no Touch ID).
+        let vaultRoot = FileManager.default.temporaryDirectory.appendingPathComponent("broski-snapshot-vault-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: vaultRoot, withIntermediateDirectories: true)
+        let newVault = VaultSession(root: vaultRoot)
+        render(VaultView(model: newVault), size: NSSize(width: 720, height: 520), to: folder, "vault-create")
+        if let (made, _) = try? Vault.create(root: vaultRoot, passphrase: "snapshot passphrase", iterations: 1_000) {
+            try? made.save(VaultItem(title: "Spare key", body: "Under the blue pot by the back door.", updated: Date().addingTimeInterval(-3600)))
+            try? made.save(VaultItem(title: "Wi-Fi at the studio", body: "Network: Studio-5G\nAsk Sam for the guest password.", updated: Date().addingTimeInterval(-86_400)))
+        }
+        let session = VaultSession(root: vaultRoot)
+        session.useTouchID = false
+        render(VaultView(model: session), size: NSSize(width: 720, height: 520), to: folder, "vault-locked")
+        session.unlock(passphrase: "snapshot passphrase")
+        let until = Date().addingTimeInterval(5)
+        while session.state != .open && Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        render(VaultView(model: session), size: NSSize(width: 720, height: 520), to: folder, "vault-open")
+        session.lock()
+        try? FileManager.default.removeItem(at: vaultRoot)
+
         // Reflection's log: one change undone, one standing.
         try? Reflection.apply(Reflection.Proposal(remember: [.init(text: "Reads replies on the phone between meetings", why: "Oct 24: said so while planning strado")],
                                                   forget: [.init(text: "Prefers short, direct answers", why: "Oct 24: asked for fuller explanations")]),

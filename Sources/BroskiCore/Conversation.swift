@@ -139,11 +139,17 @@ public enum ConversationCommand: Equatable, Sendable {
     case riffRule(String)
     /// "drop the rule about code" (empty: "clear my riff rules").
     case dropRiffRule(String)
+    /// "open my vault"
+    case openVault
+    /// "vault: …": straight into the private vault, never to a model or the conversation.
+    case toVault(String)
 
     public static func parse(_ text: String, catalog: ProjectCatalog?, riffing: Bool = false) -> ConversationCommand? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let plain = trimmed.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".!? "))
         if let rest = capture(#"^note\s*:\s*(.+)$"#, in: trimmed) { return .note(rest) }
+        if let secret = capture(#"^vault\s*:\s*(.+)$"#, in: trimmed) { return .toVault(secret) }
+        if ["open my vault", "open the vault", "open vault", "open my private vault", "show my vault"].contains(plain) { return .openVault }
         // "Wrap up" ends a riff only while riffing; otherwise it's just something said.
         if riffing, ["wrap up", "wrap it up", "let's wrap up", "lets wrap up", "wrap up the riff"].contains(plain) { return .endRiff }
         switch plain {

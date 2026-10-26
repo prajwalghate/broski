@@ -181,6 +181,7 @@ A project with no tracker gets **Create a Broski tracker**: plain markdown (`TRA
 - **What's kept:** nothing is uploaded and there are no analytics. Notes are local markdown files.
 - **What goes to a model:** only the conversation you're in, with what it recalls, through one gateway that masks keys and tokens first. Projects marked local only go only to models on the device, and reflection reads only your own words, fenced as data, and never turns instructions into memories.
 - **Automations** can notify you about a local-only project but never post it anywhere; webhook addresses stay in the Mac's secrets file.
+- **Private vault** (menu bar › Private Vault…, the iPhone's Talk › ⋯, or "vault: …" in the conversation, which goes straight in and is never sent to a model): notes encrypted on the device with AES-256-GCM under a key only your passphrase or your one-time recovery key opens (PBKDF2-SHA256, 600,000 rounds); titles too. Nothing that opens it is stored; no model, search, memory, recall, reflection or Claude Code reads it; iCloud only syncs ciphertext. Touch ID or Face ID after the first unlock, if you want it. It locks after 5 minutes idle, on close, sleep and screen lock, and its Mac window is left out of screenshots and screen recording. Lose both the passphrase and the recovery key and nobody can open it.
 
 ## Layout
 

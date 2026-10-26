@@ -12,6 +12,8 @@ struct BroskiPhoneApp: App {
     @Environment(\.scenePhase) private var phase
     @State private var tab = Tab.talk
     @State private var showCheckIn = false
+    /// The private vault while it's on screen; a fresh, locked session each time.
+    @State private var vault: VaultSession?
 
     enum Tab { case talk, capture, notes, settings }
 
@@ -47,6 +49,11 @@ struct BroskiPhoneApp: App {
                 // was said (the conversation's box, or the note).
                 recorder.onInterrupted = { heard in keepHeard(heard) }
                 recorder.vocabulary = { [store] in store.projects }
+                home.openVault = { note in
+                    let session = VaultSession(root: store.root)
+                    if let note { session.queue(note) }
+                    vault = session
+                }
                 route(router.request)
                 if let i = CommandLine.arguments.firstIndex(of: "--bark-selftest"), i + 1 < CommandLine.arguments.count {
                     Task { await PhoneBark.shared.selfTest(file: CommandLine.arguments[i + 1]) }
@@ -55,6 +62,9 @@ struct BroskiPhoneApp: App {
                 }
             }
             .sheet(isPresented: $showCheckIn) { CheckInScreen(store: store) }
+            .sheet(isPresented: Binding(get: { vault != nil }, set: { if !$0 { vault?.lock(); vault = nil } })) {
+                if let vault { VaultScreen(session: vault) }
+            }
             // Talk and Capture share one mic: leaving a screen ends its recording, and its words stay where they were
             // said (in the conversation's box, or the note).
             .onChange(of: tab) { old, _ in

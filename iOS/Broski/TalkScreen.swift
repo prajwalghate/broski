@@ -14,6 +14,8 @@ final class PhoneHome: ObservableObject {
     @Published private(set) var reading: String?
     /// Your rules for riffs, kept for every riff (the same ones as on the Mac).
     @Published private(set) var riffRules: [String] = []
+    /// Opens the private vault, with a note to add once it's open.
+    var openVault: (String?) -> Void = { _ in }
     @Published private(set) var isPrivate = false
     /// Leaving private mode after saying something: keep it, or let it go.
     @Published var askKeep = false
@@ -255,6 +257,12 @@ final class PhoneHome: ObservableObject {
             add(Turn(device: "iphone", speaker: .topic, text: name, project: name))
         case .connect:
             problem = "Folders are connected from the Mac: say it in the conversation there."
+        case .openVault:
+            openVault(nil)
+        case .toVault(let secret):
+            // Straight to the vault: never sent to a model, never kept in the conversation.
+            openVault(secret)
+            add(Turn(device: "iphone", speaker: .note, text: "Sent to your private vault (not kept here)", project: project))
         case .startRiff(let about):
             startRiff(about: about)
         case .endRiff:
@@ -589,6 +597,7 @@ struct TalkScreen: View {
                 NavigationLink { AskScreen(store: store, recorder: recorder, onRiff: onRiff) } label: {
                     Label("Search my notes", systemImage: "magnifyingglass")
                 }
+                Button { model.openVault(nil) } label: { Label("Private vault", systemImage: "lock.shield") }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
