@@ -121,6 +121,13 @@ final class PhoneHome: ObservableObject {
             // "Let's riff about pricing": the riff opens with those words.
             guard about != nil else { return }
         }
+        // Typing and the mic always work, and commands ("note: …", "vault: …") need no model; a message for a reply
+        // waits in the box until there's a model to answer it.
+        guard canTalk else {
+            draft = text
+            problem = "Add your Claude key in Settings › Claude to get replies. “note: …” saves a note without one."
+            return
+        }
         pending = []
         if text.isEmpty { text = "Shared " + files.map(\.lastPathComponent).joined(separator: ", ") }
         var stored: [String] = []
@@ -835,7 +842,6 @@ struct TalkScreen: View {
             .background(RoundedRectangle(cornerRadius: 24).fill(Color(.secondarySystemBackground)))
         }
         .padding(12)
-        .disabled(!model.canTalk)
     }
 
     private func toggleMic() {
