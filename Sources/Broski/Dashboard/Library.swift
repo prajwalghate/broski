@@ -96,7 +96,7 @@ final class Library: ObservableObject {
         // Broski's own writes (pages, settings, logs) and Finder's .DS_Store change no note, so they don't reload; nor
         // do the conversation, usage, memory and vault files (the conversation has its own refresh).
         let ignored: Set<String> = ["PROJECT.md", "config.json", ".DS_Store"]
-        let notNotes = ["/.broski/", "/conversations/", "/usage/", "/memory/", "/vault/"]
+        let notNotes = ["/.broski/", "/conversations/", "/usage/", "/memory/", "/vault/", "/evals/"]
         watcher = FileWatcher(url: store.root) { [weak self] paths in
             let notes = paths.filter { path in !notNotes.contains { path.contains($0) } && !ignored.contains((path as NSString).lastPathComponent) }
             if paths.isEmpty || !notes.isEmpty { self?.scheduleReload() }

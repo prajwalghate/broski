@@ -82,6 +82,7 @@ enum Diagnostics {
         if args.contains("--first-run") { return runFirstRun(note: note) }
         if args.contains("--riff-mode") { return runRiffMode(note: note) }
         if args.contains("--cache-check") { return runCacheCheck(note: note) }
+        if let i = args.firstIndex(of: "--eval-riff"), i + 1 < args.count { return RiffEval.run(Array(args[(i + 1)...]), note: note) }
         if let i = args.firstIndex(of: "--page-cost"), i + 1 < args.count { return runPageCost(args[i + 1], note: note) }
         if let i = args.firstIndex(of: "--read-link"), i + 1 < args.count {
             return runReadLink(args[i + 1], reply: !args.contains("--no-reply"), note: note)

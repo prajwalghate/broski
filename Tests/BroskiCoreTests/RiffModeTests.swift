@@ -66,6 +66,7 @@ struct RiffModeTests {
         #expect(system.contains("never invent"))
         #expect(system.contains("10x"))
         #expect(system.contains("dark patterns"))
+        #expect(system.contains("never announce"), "moves are used the way a person would, not named like a menu")
         #expect(!RiffMode.moves.isEmpty && Set(RiffMode.moves.map(\.name)).count == RiffMode.moves.count)
         #expect(RiffMode.moves.allSatisfy { !$0.ask.isEmpty && system.contains($0.name.lowercased()) }, "Broski knows every move it can pull in")
         #expect(RiffMode.moves.contains { $0.name == "Pre-mortem" } && RiffMode.moves.contains { $0.name == "Ethics check" })
@@ -112,5 +113,17 @@ struct RiffModeTests {
         let riff = Turn(at: day, device: "mac", speaker: .you, text: "idea", mode: "riff")
         let again = try JSONLines.decoder.decode(Turn.self, from: JSONLines.encoder.encode(riff))
         #expect(again == riff)
+    }
+}
+
+@Suite("Language")
+struct LanguageTests {
+    @Test("Broski always replies in English, even when you talk in Hinglish or Marathi, in conversation and riffs alike")
+    func english() {
+        #expect(ConversationContext.persona.contains("Always reply in English"))
+        let turns = [Turn(device: "mac", speaker: .you, text: "Yaar, kaise start karein?", mode: "riff")]
+        let riff = ConversationContext.build(aboutYou: nil, page: nil, project: nil, turns: turns, isPrivate: false, riff: [])
+        let privately = ConversationContext.build(aboutYou: nil, page: nil, project: nil, turns: turns, isPrivate: true)
+        #expect(riff.system.contains("Always reply in English") && privately.system.contains("Always reply in English"))
     }
 }
