@@ -45,10 +45,16 @@ final class SpeechEngine: NSObject {
 
     /// Diagnostics feed recorded audio through `simulate(_:)` instead of starting the microphone.
     var simulatedInput = false
+    /// Diagnostics: voice processing fails to start the way it does with some speakers and streaming setups (-10875),
+    /// so the fallback to the plain mic can be checked on any Mac.
+    var failVoiceProcessing = false
 
     private var recognizer: SFSpeechRecognizer?
-    private let audioEngine = AVAudioEngine()
+    /// Replaced, not reused, after voice processing fails, a mic change or a device change: the old engine keeps stale
+    /// formats (one whose voice processing failed sends three silent channels and won't take a device).
+    private var audioEngine = AVAudioEngine()
     private var audioRunning = false
+    private var restarts: [Date] = []
     private var task: SFSpeechRecognitionTask?
     private var generation = 0
     private var taskStarted = Date()
@@ -132,7 +138,7 @@ final class SpeechEngine: NSObject {
         do {
             try ensureAudio()
         } catch {
-            onProblem?(error.localizedDescription)
+            onProblem?(startProblem(error))
             return
         }
         startTask(.wake, replay: 0)
@@ -190,7 +196,13 @@ final class SpeechEngine: NSObject {
 
     /// The mic choice changed: reopen on the new one if the mic is on now, otherwise the next start uses it.
     func reopenMicrophone() {
-        recoverFromDeviceChange()
+        if audioRunning { recoverFromDeviceChange() } else { replaceEngine() }
+    }
+
+    /// The user's message for a mic that wouldn't start; the system's error goes to the log.
+    func startProblem(_ error: Error) -> String {
+        Log.info("Microphone wouldn't start on \(microphoneName.isEmpty ? Microphones.current : microphoneName): \(Self.code(of: error))")
+        return MicVerdict.couldNotStart(mic: microphoneName.isEmpty ? Microphones.current : microphoneName)
     }
 
     /// Hands over what's been recorded so far and keeps recording, so Whisper can work phrase by phrase.
@@ -367,13 +379,15 @@ final class SpeechEngine: NSObject {
             try startMicrophone(voiceProcessing: processing, device: chosen)
         } catch where processing {
             // Voice processing can't run on some device combinations (for example a Bluetooth
-            // speaker with the built-in mic). Remember that and use the plain microphone.
-            Log.info("Voice processing couldn't start (\(error.localizedDescription)); using the plain mic")
+            // speaker with the built-in mic). Remember that and use the plain microphone, on a fresh engine.
+            Log.info("Voice processing couldn't start (\(Self.code(of: error))); using the plain mic")
             voiceProcessingFailed = true
-            audioEngine.inputNode.removeTap(onBus: 0)
-            audioEngine.stop()
-            try? audioEngine.inputNode.setVoiceProcessingEnabled(false)
-            audioEngine.reset()
+            replaceEngine()
+            try startMicrophone(voiceProcessing: false, device: nil)
+        } catch where chosen != nil {
+            // The chosen mic wouldn't start (held by another app, or just unplugged): the system's mic instead.
+            Log.info("Couldn't start \(Microphones.name(of: chosen!) ?? "the chosen mic") (\(Self.code(of: error))); using the system's mic")
+            replaceEngine()
             try startMicrophone(voiceProcessing: false, device: nil)
         }
         maintenanceTimer?.invalidate()
@@ -383,15 +397,16 @@ final class SpeechEngine: NSObject {
     }
 
     private func startMicrophone(voiceProcessing: Bool, device: AudioDeviceID?) throws {
+        // Turning voice processing off doesn't give the plain mic back: start over on a fresh engine.
+        if !voiceProcessing && audioEngine.inputNode.isVoiceProcessingEnabled { replaceEngine() }
         let input = audioEngine.inputNode
         applyVoiceProcessing(to: input, enabled: voiceProcessing)
-        // Without voice processing the engine keeps whichever device it last had, so say which: the chosen mic, or the
-        // system's (back from a chosen one).
-        if !voiceProcessing, let id = device ?? Microphones.systemDefault, let unit = input.audioUnit {
-            var value = id
+        // A fresh engine listens on the system's mic; a chosen one is set before it starts.
+        if !voiceProcessing, let device, let unit = input.audioUnit {
+            var value = device
             let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                               &value, UInt32(MemoryLayout<AudioDeviceID>.size))
-            if status != noErr { Log.info("Couldn't switch to the mic \(Microphones.name(of: id) ?? "\(id)") (\(status))") }
+            if status != noErr { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
         }
         microphoneName = (device ?? Microphones.systemDefault).flatMap(Microphones.name(of:)) ?? "the system's mic"
         let format = input.outputFormat(forBus: 0)
@@ -402,11 +417,14 @@ final class SpeechEngine: NSObject {
         lock.unlock()
 
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+        // No format: the tap takes the bus's own. Passing one that went stale (the device changed rate a moment ago)
+        // throws an exception that ends the app.
+        input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             self?.consume(buffer)
         }
         audioEngine.prepare()
         do {
+            if voiceProcessing && failVoiceProcessing { throw NSError(domain: "com.apple.coreaudio.avfaudio", code: -10875) }
             try audioEngine.start()
         } catch {
             input.removeTap(onBus: 0)
@@ -470,11 +488,12 @@ final class SpeechEngine: NSObject {
             return "mic failed: \(error.localizedDescription)"
         }
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        let raw = peakSinceDictation
         let audio = takeRecording()
         let format = audio.first.map { "\($0.format)" } ?? "none"
         let peak = audio.map { AudioRing.level(of: $0) }.max() ?? 0
         stop()
-        return "voice processing \(voiceProcessingActive), \(audio.count) buffers, format \(format), peak level \(String(format: "%.2f", peak))"
+        return "voice processing \(voiceProcessingActive), \(audio.count) buffers, format \(format), peak level \(String(format: "%.2f", peak)) (raw \(String(format: "%.5f", raw)))"
     }
 
     private func stopAudio() {
@@ -489,6 +508,20 @@ final class SpeechEngine: NSObject {
         audioEngine.stop()
         audioRunning = false
         Log.info("Microphone off")
+    }
+
+    private func replaceEngine() {
+        let old = audioEngine
+        old.inputNode.removeTap(onBus: 0)
+        old.stop()
+        NotificationCenter.default.removeObserver(self, name: .AVAudioEngineConfigurationChange, object: old)
+        audioEngine = AVAudioEngine()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(audioConfigurationChanged),
+            name: .AVAudioEngineConfigurationChange, object: audioEngine
+        )
+        voiceProcessingActive = false
+        audioRunning = false
     }
 
     /// Audio thread.
@@ -521,18 +554,25 @@ final class SpeechEngine: NSObject {
         DispatchQueue.main.async { [weak self] in self?.recoverFromDeviceChange() }
     }
 
-    /// Plugging in headphones or switching inputs stops the engine; restart on the new device.
+    /// Plugging in headphones or switching inputs stops the engine; restart on the new device, on a fresh engine.
     private func recoverFromDeviceChange() {
         guard audioRunning else { return }
+        // A device that keeps changing (or an engine that keeps reporting changes) shouldn't restart forever.
+        restarts = restarts.filter { $0.timeIntervalSinceNow > -10 } + [Date()]
+        guard restarts.count <= 4 else {
+            Log.info("Audio keeps changing; leaving the microphone off")
+            stop()
+            onProblem?(MicVerdict.couldNotStart(mic: microphoneName.isEmpty ? Microphones.current : microphoneName))
+            return
+        }
         Log.info("Audio input changed; restarting the microphone")
         let previous = mode
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        replaceEngine()
         audioRunning = false
         do {
             try ensureAudio()
         } catch {
-            onProblem?("Couldn't restart the microphone: \(error.localizedDescription)")
+            onProblem?(startProblem(error))
             return
         }
         switch previous {

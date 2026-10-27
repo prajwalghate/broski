@@ -36,6 +36,9 @@ enum BroskiApp {
             Snapshots.run(to: URL(fileURLWithPath: args[i + 1], isDirectory: true))
             _exit(0)
         }
+        if let i = args.firstIndex(of: "--chat-check"), i + 1 < args.count {
+            _exit(ChatCheck.run(report: URL(fileURLWithPath: args[i + 1])) ? 0 : 1)
+        }
         if let i = args.firstIndex(of: "--diagnose"), i + 2 < args.count {
             Diagnostics.run(audio: URL(fileURLWithPath: args[i + 1]), report: URL(fileURLWithPath: args[i + 2]))
             _exit(0)

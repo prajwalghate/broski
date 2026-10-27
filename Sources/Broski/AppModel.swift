@@ -494,6 +494,9 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
 
     func closeAsk() {
         askPanel?.orderOut(nil)
+        // A question typed but not asked yet is still there next time (not just the "In strado, " it opens with).
+        let typed = askModel.question.trimmingCharacters(in: .whitespacesAndNewlines)
+        if askModel.answer == nil, !typed.isEmpty, !typed.hasSuffix(",") { askKeepsDraft = true }
         // The open riff window's mic button can still stop the mic, and it may be the riff's dictation.
         guard windows["riff"] == nil else { return }
         stopVoice { [weak self] text in

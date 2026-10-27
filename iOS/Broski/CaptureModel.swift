@@ -22,6 +22,8 @@ final class CaptureModel: ObservableObject {
         var title: String
         var detail: String
         var undo: Item?
+        /// A failure: shown with a warning, not a green check.
+        var failed = false
     }
 
     private let store: PhoneStore
@@ -187,7 +189,7 @@ final class CaptureModel: ObservableObject {
         // A note saved while the shared folder is out of reach would be stranded on this iPhone: try it again first.
         if self.store.sharedUnavailable { self.store.reload() }
         guard !self.store.sharedUnavailable else {
-            toast = Toast(title: "Couldn't reach the shared folder", detail: "Your note is kept here. Try again in a moment, or pick the folder again in Settings.")
+            toast = Toast(title: "Couldn't reach the shared folder", detail: "Your note is kept here. Try again in a moment, or pick the folder again in Settings.", failed: true)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return
         }
@@ -259,7 +261,7 @@ final class CaptureModel: ObservableObject {
             self.store.reload()
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch {
-            toast = Toast(title: "Couldn't save", detail: error.localizedDescription)
+            toast = Toast(title: "Couldn't save", detail: error.localizedDescription, failed: true)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }

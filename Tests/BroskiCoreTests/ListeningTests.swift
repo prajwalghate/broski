@@ -55,6 +55,15 @@ struct ListeningTests {
         #expect(phone.contains("another app") && !phone.contains("Choose another mic"))
     }
 
+    @Test("a mic that won't start is explained in words: no error codes, the mic named, what to try")
+    func startFailure() {
+        let mac = MicVerdict.couldNotStart(mic: "Studio Mic")
+        #expect(mac.contains("Studio Mic") && mac.contains("another app") && mac.localizedCaseInsensitiveContains("choose another mic"))
+        #expect(!mac.contains("-10875") && !mac.contains("coreaudio") && !mac.contains("operation couldn"))
+        let phone = MicVerdict.couldNotStart(mic: "the microphone", canChoose: false)
+        #expect(phone.contains("another app") && !phone.localizedCaseInsensitiveContains("choose another mic"))
+    }
+
     @Test("the chosen mic is used while it's plugged in; otherwise the system's mic")
     func choosingTheMic() {
         let builtIn = MicDevice(uid: "built-in", name: "Built-in Microphone")

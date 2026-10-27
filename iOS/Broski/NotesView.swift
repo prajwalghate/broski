@@ -54,6 +54,8 @@ struct NotesView: View {
                 if store.items.isEmpty && store.projects.isEmpty && search.isEmpty {
                     ContentUnavailableView("No notes yet", systemImage: "square.stack",
                                            description: Text("Notes you save show up here."))
+                } else if !search.isEmpty && results.isEmpty {
+                    ContentUnavailableView.search(text: search)
                 }
             }
         }
@@ -187,7 +189,7 @@ struct ItemDetail: View {
                 Text(item.title).font(.title2.weight(.semibold))
 
                 if !item.body.isEmpty {
-                    Text((try? AttributedString(markdown: item.body, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(item.body))
+                    Text(ReplyText.rendered(item.body))
                         .textSelection(.enabled)
                 }
 

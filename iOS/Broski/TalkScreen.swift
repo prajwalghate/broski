@@ -8,7 +8,11 @@ import UniformTypeIdentifiers
 @MainActor
 final class PhoneHome: ObservableObject {
     @Published private(set) var turns: [Turn] = []
-    @Published var draft = ""
+    /// What you're typing; kept if iOS closes the app (not in private mode, which keeps nothing).
+    @Published var draft = "" {
+        didSet { if !isPrivate { UserDefaults.standard.set(draft, forKey: Self.draftKey) } }
+    }
+    private static let draftKey = "BroskiTalkDraft"
     @Published private(set) var thinking = false
     /// "Reading example.com…" while links you shared are being opened.
     @Published private(set) var reading: String?
@@ -28,6 +32,10 @@ final class PhoneHome: ObservableObject {
     /// A new project the review noticed; it's set up from the Mac, which keeps the project list.
     @Published var proposal: ProjectProposal?
     @Published var problem: String?
+    /// The last reply failed (offline, a key, a limit): Try again asks once more, with what was shared.
+    @Published private(set) var canRetry = false
+    /// Counts what you've said, so the conversation scrolls to it even if you'd scrolled up.
+    @Published private(set) var sentCount = 0
     @Published var speak: Bool { didSet { UserDefaults.standard.set(speak, forKey: Self.speakKey) ; if !speak { voice.stop() } } }
     /// Reading a reply aloud now: Talk offers Stop.
     @Published private(set) var speaking = false
@@ -38,6 +46,7 @@ final class PhoneHome: ObservableObject {
     /// A private conversation lives only here, never on disk.
     private var privateTurns: [Turn] = []
     private var task: Task<Void, Never>?
+    private var lastAttachments: [ModelPart] = []
     private var recallIndex: NotesIndex?
     private static let speakKey = "BroskiTalkSpeak"
     private var conversation: ConversationStore { ConversationStore(root: store.root, device: "iphone") }
@@ -46,6 +55,7 @@ final class PhoneHome: ObservableObject {
         self.store = store
         speak = UserDefaults.standard.bool(forKey: Self.speakKey)
         reload()
+        draft = UserDefaults.standard.string(forKey: Self.draftKey) ?? ""
         voice.onSpeaking = { [weak self] on in self?.speaking = on }
     }
 
@@ -114,11 +124,14 @@ final class PhoneHome: ObservableObject {
 
     // MARK: Talking
 
-    func send() {
-        var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let files = pending
+    /// Sends what's typed (and the files waiting), or `said` (a thinking move) without touching what you're typing.
+    func send(_ said: String? = nil) {
+        var text = (said ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
+        let files = said == nil ? pending : []
         guard !text.isEmpty || !files.isEmpty, !thinking else { return }
-        draft = ""
+        if said == nil { draft = "" }
+        problem = nil
+        canRetry = false
         if let command = ConversationCommand.parse(text, catalog: store.catalog, riffing: riffing) {
             guard case .startRiff(let about) = command else { return run(command) }
             startRiff(about: about)
@@ -128,11 +141,11 @@ final class PhoneHome: ObservableObject {
         // Typing and the mic always work, and commands ("note: …", "vault: …") need no model; a message for a reply
         // waits in the box until there's a model to answer it.
         guard canTalk else {
-            draft = text
+            if said == nil { draft = text }
             problem = "Add your Claude key in Settings › Claude to get replies. “note: …” saves a note without one."
             return
         }
-        pending = []
+        if said == nil { pending = [] }
         if text.isEmpty { text = "Shared " + files.map(\.lastPathComponent).joined(separator: ", ") }
         var stored: [String] = []
         if !isPrivate {
@@ -168,9 +181,11 @@ final class PhoneHome: ObservableObject {
                 // The conversation model lives as long as the app.
                 await MainActor.run { self.reading = status }
             }
+            // Stopped: Stop already reset these, and a newer reply may be thinking now.
+            guard !Task.isCancelled else { return }
             reading = nil
             thinking = false
-            guard wasPrivate == isPrivate, !Task.isCancelled else { return }
+            guard wasPrivate == isPrivate else { return }
             for note in outcome.notes {
                 add(Turn(device: "iphone", speaker: .note, text: note.text, files: note.files.isEmpty ? nil : note.files, project: project))
             }
@@ -195,6 +210,7 @@ final class PhoneHome: ObservableObject {
     func stopSpeaking() { voice.stop() }
 
     private func add(_ turn: Turn) {
+        if turn.speaker == .you { sentCount += 1 }
         if isPrivate { return privateTurns.append(turn) }
         turns.append(turn)
         recallIndex = nil
@@ -238,8 +254,11 @@ final class PhoneHome: ObservableObject {
         let wasPrivate = isPrivate
         thinking = true
         problem = nil
+        canRetry = false
+        lastAttachments = attachments
         task = Task {
-            defer { thinking = false }
+            // A stopped reply leaves `thinking` alone: Stop reset it, and you may have asked again since.
+            defer { if !Task.isCancelled { thinking = false } }
             do {
                 let (reply, route) = try await gateway.send(request, role: role, project: project, localOnly: localOnly,
                                                             task: riff ? "riff" : "conversation")
@@ -255,8 +274,15 @@ final class PhoneHome: ObservableObject {
                 if !wasPrivate, !riff { suggestSave(force: false) }
             } catch where !Cancellation.isStop(error) {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                canRetry = wasPrivate == isPrivate
             } catch {}
         }
+    }
+
+    /// Asks again after a failed reply: what you said is already in the conversation.
+    func retry() {
+        guard canRetry, !thinking, visibleTurns.last(where: { $0.speaker != .note })?.speaker == .you else { return canRetry = false }
+        reply(attachments: lastAttachments)
     }
 
     /// Stop: drops the reply being written (or the links being read, the wrap-up, the pack draft). What you said stays.
@@ -324,7 +350,7 @@ final class PhoneHome: ObservableObject {
             let gateway = canTalk ? self.gateway : nil
             thinking = true
             task = Task {
-                defer { thinking = false }
+                defer { if !Task.isCancelled { thinking = false } }
                 do {
                     let said = try await Packs.draft(name: name, context: context, gateway: gateway, root: store.root)
                     guard !Task.isCancelled else { return }
@@ -430,7 +456,7 @@ final class PhoneHome: ObservableObject {
         thinking = true
         reading = "Wrapping up the riff…"
         task = Task {
-            defer { thinking = false; reading = nil }
+            defer { if !Task.isCancelled { thinking = false; reading = nil } }
             do {
                 let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly, task: "wrap-up")
                 guard !Task.isCancelled else { return }
@@ -452,7 +478,7 @@ final class PhoneHome: ObservableObject {
 
     func goPrivate() {
         guard !isPrivate else { return }
-        task?.cancel()
+        stopReply()
         isPrivate = true
         privateTurns = []
         deep = false
@@ -531,6 +557,9 @@ struct TalkScreen: View {
     @State private var choosingPhotos = false
     @State private var choosingFiles = false
     @FocusState private var focused: Bool
+    /// The conversation's end is in view: new replies scroll into view. Scrolled up to read, they don't.
+    @State private var pinned = true
+    @State private var followUntil = Date.distantPast
 
     var body: some View {
         NavigationStack {
@@ -539,7 +568,8 @@ struct TalkScreen: View {
                 if model.riffing { riffBanner }
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 12) {
+                        // Not lazy: rows measured as they scroll into view make the position jump.
+                        VStack(alignment: .leading, spacing: 12) {
                             if !model.canTalk {
                                 Label("Add your Claude key in Settings › Claude to talk to Broski.", systemImage: "key")
                                     .font(.callout).foregroundStyle(.orange)
@@ -562,15 +592,38 @@ struct TalkScreen: View {
                             if let proposal = model.proposal { proposalView(proposal) }
                             if let problem = model.problem ?? recorder.problem {
                                 Label(problem, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                                if model.problem != nil && model.canRetry {
+                                    Button("Try again") { model.retry() }
+                                        .font(.callout.weight(.semibold)).buttonStyle(.bordered).tint(Brand.purple)
+                                }
                             }
                             Color.clear.frame(height: 1).id("end")
                         }
                         .padding(16)
                     }
                     .scrollDismissesKeyboard(.interactively)
-                    .onAppear { proxy.scrollTo("end", anchor: .bottom) }
-                    .onChange(of: model.visibleTurns.count) { _, _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
-                    .onChange(of: model.card) { _, _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+                    .modifier(TracksEnd { atBottom in
+                        if !atBottom, Date() < followUntil { return }
+                        pinned = atBottom
+                    })
+                    .overlay(alignment: .bottomTrailing) {
+                        if !pinned {
+                            Button { follow(.switchedView, proxy) } label: {
+                                Image(systemName: "arrow.down").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                                    .frame(width: 40, height: 40)
+                                    .background(Circle().fill(Brand.purple))
+                                    .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+                            }
+                            .padding(14)
+                            .accessibilityLabel("Jump to the latest")
+                        }
+                    }
+                    .onAppear { follow(.switchedView, proxy, animated: false) }
+                    .onChange(of: model.sentCount) { _, _ in follow(.yourMessage, proxy) }
+                    .onChange(of: contentKey) { _, _ in follow(.newContent, proxy) }
+                    .onChange(of: model.isPrivate) { _, _ in follow(.switchedView, proxy, animated: false) }
+                    // The keyboard opening shrinks the view from the bottom: keep the latest in sight.
+                    .onChange(of: focused) { _, on in if on { follow(.newContent, proxy) } }
                 }
                 Divider()
                 composer
@@ -645,7 +698,7 @@ struct TalkScreen: View {
                 if model.riffing {
                     Menu {
                         ForEach(RiffMode.moves, id: \.name) { move in
-                            Button(move.name) { model.draft = move.ask; model.send() }
+                            Button(move.name) { model.send(move.ask) }
                         }
                     } label: { Label("Thinking moves", systemImage: "sparkles") }
                 }
@@ -704,6 +757,33 @@ struct TalkScreen: View {
         .background(Brand.privateText.opacity(0.12))
     }
 
+    /// Everything that can appear at the end of the conversation.
+    private var contentKey: String {
+        let last = model.visibleTurns.last
+        var parts: [String] = ["\(model.visibleTurns.count)", last?.id ?? "", "\(last?.text.count ?? 0)"]
+        parts.append(model.thinking ? "thinking" : "")
+        parts.append(model.reading ?? "")
+        parts.append("\(model.card?.items.count ?? -1)")
+        parts.append(model.proposal == nil ? "" : "proposal")
+        parts.append(model.problem ?? "")
+        parts.append(recorder.problem ?? "")
+        parts.append(model.canRetry ? "retry" : "")
+        return parts.joined(separator: "|")
+    }
+
+    private func follow(_ change: ChatScroll.Change, _ proxy: ScrollViewProxy, animated: Bool = true) {
+        guard ChatScroll.follows(change, pinned: pinned) else { return }
+        followUntil = Date().addingTimeInterval(0.8)
+        pinned = true
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("end", anchor: .bottom) }
+            } else {
+                proxy.scrollTo("end", anchor: .bottom)
+            }
+        }
+    }
+
     // MARK: Turns
 
     @ViewBuilder private func row(_ turn: Turn) -> some View {
@@ -712,7 +792,7 @@ struct TalkScreen: View {
             VStack(alignment: turn.speaker == .you ? .trailing : .leading, spacing: 4) {
                 HStack {
                     if turn.speaker == .you { Spacer(minLength: 48) }
-                    Text((try? AttributedString(markdown: turn.text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.text))
+                    Text(turn.speaker == .you ? ReplyText.plain(turn.text) : ReplyText.rendered(turn.text))
                         .textSelection(.enabled)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 9)
@@ -894,5 +974,25 @@ struct TalkScreen: View {
         guard model.canTalk, !recorder.isRecording else { return }
         model.stopSpeaking()
         Task { await recorder.start() }
+    }
+}
+
+/// Opens at the latest and says whether the end is in view (iOS 18). On iOS 17 the conversation always follows.
+private struct TracksEnd: ViewModifier {
+    var changed: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    ChatScroll.atBottom(endY: geometry.contentSize.height - geometry.contentOffset.y - geometry.contentInsets.top,
+                                        viewport: geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom)
+                } action: { _, atBottom in
+                    changed(atBottom)
+                }
+        } else {
+            content
+        }
     }
 }

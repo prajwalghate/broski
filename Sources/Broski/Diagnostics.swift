@@ -81,6 +81,7 @@ enum Diagnostics {
         if args.contains("--reflect") { return runReflect(note: note) }
         if let i = args.firstIndex(of: "--three-channel"), i + 1 < args.count { return runThreeChannel(args[i + 1], note: note) }
         if args.contains("--mics") { return runMics(note: note) }
+        if args.contains("--voice-processing-fallback") { return runVoiceProcessingFallback(note: note) }
         if args.contains("--first-run") { return runFirstRun(note: note) }
         if args.contains("--riff-mode") { return runRiffMode(note: note) }
         if args.contains("--cache-check") { return runCacheCheck(note: note) }
@@ -946,6 +947,41 @@ enum Diagnostics {
             done = true
         }
         let deadline = Date().addingTimeInterval(30)
+        while !done && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        note("done")
+    }
+
+    /// `--voice-processing-fallback`: voice processing fails to start (as with some speakers and streaming setups),
+    /// and the plain mic has to take over: it should sound like the plain mic does on its own, then a chosen mic too.
+    static func runVoiceProcessingFallback(note: @escaping (String) -> Void) {
+        var done = false
+        Task { @MainActor in
+            UserDefaults.standard.removeObject(forKey: "BroskiVoiceProcessingFailed")
+            let natural = SpeechEngine()
+            natural.voiceIsolation = true
+            note("[fallback] as the app starts it (voice processing first): " + (await natural.micCheck(seconds: 2)) + ", on \(natural.microphoneName)")
+            note("[fallback] the app's second press: " + (await natural.micCheck(seconds: 2)) + ", on \(natural.microphoneName)")
+            let plain = SpeechEngine()
+            plain.voiceIsolation = false
+            note("[fallback] plain mic alone: " + (await plain.micCheck(seconds: 2)) + ", on \(plain.microphoneName)")
+            let failing = SpeechEngine()
+            failing.voiceIsolation = true
+            failing.failVoiceProcessing = true
+            UserDefaults.standard.removeObject(forKey: "BroskiVoiceProcessingFailed")
+            note("[fallback] after voice processing failed: " + (await failing.micCheck(seconds: 2)) + ", on \(failing.microphoneName)")
+            note("[fallback] again, remembered as failed: " + (await failing.micCheck(seconds: 2)) + ", on \(failing.microphoneName)")
+            if let builtIn = Microphones.all().first(where: { $0.uid.localizedCaseInsensitiveContains("BuiltIn") }) {
+                Microphones.chosen = builtIn.uid
+                failing.reopenMicrophone()
+                note("[fallback] then choosing \(builtIn.name): " + (await failing.micCheck(seconds: 2)) + ", on \(failing.microphoneName)")
+                Microphones.chosen = nil
+                failing.reopenMicrophone()
+                note("[fallback] back to the system mic: " + (await failing.micCheck(seconds: 2)) + ", on \(failing.microphoneName)")
+            }
+            UserDefaults.standard.removeObject(forKey: "BroskiVoiceProcessingFailed")
+            done = true
+        }
+        let deadline = Date().addingTimeInterval(60)
         while !done && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
         note("done")
     }

@@ -84,7 +84,7 @@ final class Recorder: ObservableObject {
             try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            problem = "Couldn't use the microphone: \(error.localizedDescription)"
+            problem = MicVerdict.couldNotStart(mic: "the microphone", canChoose: false)
             return
         }
         let input = engine.inputNode
@@ -118,7 +118,7 @@ final class Recorder: ObservableObject {
         } catch {
             // Give other apps their audio back and drop the recognition task, not just the tap.
             release()
-            problem = "Couldn't start the microphone: \(error.localizedDescription)"
+            problem = MicVerdict.couldNotStart(mic: "the microphone", canChoose: false)
         }
     }
 

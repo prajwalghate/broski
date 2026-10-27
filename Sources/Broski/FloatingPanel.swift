@@ -53,6 +53,11 @@ final class FloatingPanel: NSPanel {
         onCancel?()
     }
 
+    /// ⌘W closes it like Esc does (it has no close button, so the system would only beep).
+    override func performClose(_ sender: Any?) {
+        onCancel?()
+    }
+
     /// Shows the panel beside `anchor` (the floating button) or near the top of the active screen.
     /// Only takes keyboard focus when asked, so a wake word never steals your typing.
     func present(focus: Bool, near anchor: NSRect?) {

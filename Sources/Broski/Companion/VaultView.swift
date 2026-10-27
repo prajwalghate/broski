@@ -62,6 +62,12 @@ struct VaultView: View {
     }
 
     private func create() {
+        // Mistyped the second one: retype only that.
+        guard passphrase == confirm else {
+            model.create(passphrase: passphrase, confirm: confirm)
+            confirm = ""
+            return
+        }
         model.create(passphrase: passphrase, confirm: confirm)
         passphrase = ""
         confirm = ""
@@ -217,11 +223,14 @@ struct VaultView: View {
             HStack {
                 Spacer()
                 Button("Cancel") { changing = false; passphrase = ""; confirm = "" }
+                    .keyboardShortcut(.cancelAction)
                 Button("Change") {
+                    let matched = passphrase == confirm
                     if model.changePassphrase(passphrase, confirm: confirm) { changing = false }
-                    passphrase = ""
+                    if matched { passphrase = "" }
                     confirm = ""
                 }
+                .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent).tint(Brand.purple).disabled(passphrase.count < Vault.minimumLength)
             }
         }

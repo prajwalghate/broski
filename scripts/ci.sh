@@ -21,6 +21,11 @@ swift test
 step "Self-tests"
 swift run BroskiSelfTest
 
+step "Chat check (the real message box and conversation, off screen)"
+report="$(mktemp -t broski-chat-check)"
+if ! .build/debug/Broski --chat-check "$report" >/dev/null 2>&1; then cat "$report"; exit 1; fi
+tail -1 "$report"
+
 if [[ "${1:-}" == "--ios" ]]; then
   step "iPhone app (unsigned)"
   [[ -f iOS/Local.env ]] && source iOS/Local.env

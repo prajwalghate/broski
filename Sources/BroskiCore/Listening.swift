@@ -42,6 +42,12 @@ public enum MicVerdict: Equatable, Sendable {
         return peak < AudioMix.deadLevel ? .noSound : .noWords
     }
 
+    /// The mic wouldn't start at all. The system's own error ("-10875") means nothing to anyone, so it goes to the log.
+    public static func couldNotStart(mic: String, canChoose: Bool = true) -> String {
+        "Couldn't start \(mic). It may be in use by another app (a stream or a call), or it was just unplugged. "
+            + (canChoose ? "Try again, or choose another mic with the arrow next to the mic button." : "Stop the other app's recording, then try again.")
+    }
+
     /// `canChoose`: this device lets you pick another mic (the Mac); the iPhone says what to close instead.
     public func message(mic: String, canChoose: Bool = true) -> String? {
         let choose = canChoose ? "Choose another mic with the arrow next to the mic button, or in Settings › Voice."

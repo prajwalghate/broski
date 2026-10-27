@@ -274,7 +274,8 @@ struct CaptureView: View {
     @ViewBuilder private var toastView: some View {
         if let toast = capture.toast {
             HStack(spacing: 10) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.title3)
+                Image(systemName: toast.failed ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(toast.failed ? Color.orange : Color.green).font(.title3)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(toast.title).font(.subheadline.weight(.semibold)).lineLimit(2)
                     if !toast.detail.isEmpty { Text(toast.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2) }

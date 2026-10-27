@@ -68,6 +68,8 @@ struct OnboardingView: View {
     }
 
     private func next() {
+        // A key pasted but not saved (Return goes to Continue) is saved, not lost.
+        if !key.trimmingCharacters(in: .whitespaces).isEmpty { saveKey() }
         if step == 3 { loadRoots() }
         if step == 4 { saveRoots() }
         if step == lastStep {
@@ -152,6 +154,14 @@ struct OnboardingView: View {
     @State private var key = ""
     @State private var keyStatus: String?
 
+    private func saveKey() {
+        guard !key.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        app.brain.setKey(key)
+        key = ""
+        keyStatus = "Checking…"
+        Task { keyStatus = await app.brain.verifyKey() ?? "Working" }
+    }
+
     private var ai: some View {
         VStack(alignment: .leading, spacing: 14) {
             StepTitle(title: "Give me a brain (optional)",
@@ -160,12 +170,8 @@ struct OnboardingView: View {
                 HStack {
                     SecureField(app.brain.hasKey ? "Key saved on this Mac" : "Paste your key: sk-ant-…", text: $key)
                         .textFieldStyle(.roundedBorder)
-                    Button("Save") {
-                        app.brain.setKey(key)
-                        key = ""
-                        keyStatus = "Checking…"
-                        Task { keyStatus = await app.brain.verifyKey() ?? "Working" }
-                    }
+                        .onSubmit(saveKey)
+                    Button("Save", action: saveKey)
                     .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if let keyStatus {

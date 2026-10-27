@@ -9,7 +9,11 @@ import UniformTypeIdentifiers
 @MainActor
 final class HomeModel: ObservableObject {
     @Published private(set) var turns: [Turn] = []
-    @Published var draft = ""
+    /// What you're typing; kept across a quit or restart (not in private mode, which keeps nothing).
+    @Published var draft = "" {
+        didSet { if !isPrivate { UserDefaults.standard.set(draft, forKey: Self.draftKey) } }
+    }
+    private static let draftKey = "BroskiHomeDraft"
     @Published private(set) var thinking = false
     /// "Reading example.com…" while links you shared are being opened.
     @Published private(set) var reading: String?
@@ -31,6 +35,10 @@ final class HomeModel: ObservableObject {
     /// A new project Broski proposes; nothing is created until you tap Create.
     @Published var proposal: ProjectProposal?
     @Published var problem: String?
+    /// The last reply failed (offline, a key, a limit): Try again asks once more, with what was shared.
+    @Published private(set) var canRetry = false
+    /// Counts what you've said, so the conversation scrolls to it even if you'd scrolled up.
+    @Published private(set) var sentCount = 0
     @Published var speak: Bool
     /// Reading a reply aloud now: the window offers Stop.
     @Published private(set) var speaking = false
@@ -50,6 +58,7 @@ final class HomeModel: ObservableObject {
     /// A private conversation lives only here, never on disk.
     private var privateTurns: [Turn] = []
     private var task: Task<Void, Never>?
+    private var lastAttachments: [ModelPart] = []
     private var store: ConversationStore { ConversationStore(root: root, device: "mac") }
     /// Notes, decisions and past turns, searchable for recall; rebuilt when something new is saved or said.
     private var recallIndex: NotesIndex?
@@ -61,6 +70,7 @@ final class HomeModel: ObservableObject {
         self.config = config
         speak = config().speakReplies
         reload()
+        draft = UserDefaults.standard.string(forKey: Self.draftKey) ?? ""
         speaker.onSpeaking = { [weak self] on in self?.speaking = on }
     }
 
@@ -137,18 +147,22 @@ final class HomeModel: ObservableObject {
 
     // MARK: Talking
 
-    func send() {
-        var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let files = pending
+    /// Sends what's typed (and the files waiting), or `said` (a chip, a move) without touching what you're typing.
+    func send(_ said: String? = nil) {
+        var text = (said ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
+        let files = said == nil ? pending : []
         guard !text.isEmpty || !files.isEmpty, !thinking else { return }
-        draft = ""
+        if said == nil { draft = "" }
+        problem = nil
+        canRetry = false
+        voice.problem = nil
         if let command = ConversationCommand.parse(text, catalog: library.catalog, riffing: riffing) {
             guard case .startRiff(let about) = command else { return run(command) }
             startRiff(about: about)
             // "Let's riff about pricing": the riff opens with those words.
             guard about != nil else { return }
         }
-        pending = []
+        if said == nil { pending = [] }
         if text.isEmpty { text = "Shared " + files.map(\.lastPathComponent).joined(separator: ", ") }
         // What you share is kept with the project; a private conversation keeps nothing, so nothing is copied.
         var stored: [String] = []
@@ -191,9 +205,11 @@ final class HomeModel: ObservableObject {
                 // The home model lives as long as the app.
                 await MainActor.run { self.reading = status }
             }
+            // Stopped: Stop already reset these, and a newer reply may be thinking now.
+            guard !Task.isCancelled else { return }
             reading = nil
             thinking = false
-            guard wasPrivate == isPrivate, !Task.isCancelled else { return }
+            guard wasPrivate == isPrivate else { return }
             for note in outcome.notes {
                 add(Turn(device: "mac", speaker: .note, text: note.text, files: note.files.isEmpty ? nil : note.files, project: project))
             }
@@ -290,7 +306,9 @@ final class HomeModel: ObservableObject {
         }
     }
 
-    private func add(_ turn: Turn) {
+    /// Adds a turn to the conversation and its file (or to the private one). The chat check adds turns this way too.
+    func add(_ turn: Turn) {
+        if turn.speaker == .you { sentCount += 1 }
         if isPrivate {
             privateTurns.append(turn)
             return
@@ -338,8 +356,11 @@ final class HomeModel: ObservableObject {
         let wasPrivate = isPrivate
         thinking = true
         problem = nil
+        canRetry = false
+        lastAttachments = attachments
         task = Task {
-            defer { thinking = false }
+            // A stopped reply leaves `thinking` alone: Stop reset it, and you may have asked again since.
+            defer { if !Task.isCancelled { thinking = false } }
             do {
                 let (reply, route) = try await gateway.send(request, role: role, project: project, localOnly: localOnly,
                                                             task: riff ? "riff" : "conversation")
@@ -362,8 +383,20 @@ final class HomeModel: ObservableObject {
                 }
             } catch where !Cancellation.isStop(error) {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                canRetry = wasPrivate == isPrivate
             } catch {}
         }
+    }
+
+    /// Asks again after a failed reply: what you said is already in the conversation.
+    func retry() {
+        guard canRetry, !thinking, visibleTurns.last(where: { $0.speaker != .note })?.speaker == .you else { return canRetry = false }
+        reply(attachments: lastAttachments)
+    }
+
+    /// Up in an empty box: your last message, to edit and send again.
+    func lastSaid() -> String? {
+        visibleTurns.last(where: { $0.speaker == .you })?.text
     }
 
     /// Stop: drops the reply being written (or the links being read, the wrap-up, the pack draft). What you said stays.
@@ -432,7 +465,7 @@ final class HomeModel: ObservableObject {
             let gateway = needsModel ? nil : self.gateway
             thinking = true
             task = Task {
-                defer { thinking = false }
+                defer { if !Task.isCancelled { thinking = false } }
                 do {
                     let said = try await Packs.draft(name: name, context: context, gateway: gateway, root: root)
                     guard !Task.isCancelled else { return }
@@ -559,7 +592,7 @@ final class HomeModel: ObservableObject {
         thinking = true
         reading = "Wrapping up the riff…"
         task = Task {
-            defer { thinking = false; reading = nil }
+            defer { if !Task.isCancelled { thinking = false; reading = nil } }
             do {
                 let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly, task: "wrap-up")
                 guard !Task.isCancelled else { return }
@@ -607,7 +640,7 @@ final class HomeModel: ObservableObject {
 
     func goPrivate() {
         guard !isPrivate else { return }
-        task?.cancel()
+        stopReply()
         isPrivate = true
         privateTurns = []
         deep = false
@@ -686,8 +719,11 @@ struct HomeView: View {
     @ObservedObject var voice: VoiceInput
     var openDashboard: () -> Void
     var openMemory: () -> Void
-    @FocusState private var focused: Bool
     @State private var dropping = false
+    /// The conversation's end is in view: new replies scroll into view. Scrolled up to read, they don't.
+    @State private var pinned = true
+    /// New content pushes the end out of view for a moment before the scroll catches up; that isn't you scrolling up.
+    @State private var followUntil = Date.distantPast
     @State private var showingRules = false
     @State private var newRule = ""
 
@@ -715,7 +751,6 @@ struct HomeView: View {
                     .allowsHitTesting(false)
             }
         }
-        .onAppear { focused = true }
         // Back from Settings with a key or a model: look again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             model.objectWillChange.send()
@@ -799,7 +834,7 @@ struct HomeView: View {
                 Spacer()
                 Menu("Moves") {
                     ForEach(RiffMode.moves, id: \.name) { move in
-                        Button(move.name) { model.draft = move.ask; model.send() }
+                        Button(move.name) { model.send(move.ask) }
                     }
                 }
                 .menuStyle(.borderlessButton).fixedSize().controlSize(.small)
@@ -888,9 +923,11 @@ struct HomeView: View {
     }
 
     private var conversation: some View {
+        GeometryReader { outer in
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                // Not lazy: rows of text measured as they scroll into view make the scroll bar and position jump.
+                VStack(alignment: .leading, spacing: 14) {
                     if model.needsModel && !model.isPrivate { modelSetup }
                     if model.visibleTurns.isEmpty {
                         Text(model.isPrivate
@@ -912,15 +949,79 @@ struct HomeView: View {
                     if let card = model.card { saveCard(card).id("card") }
                     if let proposal = model.proposal { projectCard(proposal).id("proposal") }
                     if let problem = model.problem ?? voice.problem {
-                        Text(problem).font(.system(size: 12)).foregroundStyle(.orange).textSelection(.enabled)
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(problem).font(.system(size: 12)).foregroundStyle(.orange).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if model.problem != nil && model.canRetry {
+                                Button("Try again") { model.retry() }
+                                    .controlSize(.small)
+                                    .help("Ask again: what you said is already here")
+                            }
+                        }
                     }
                     Color.clear.frame(height: 1).id("end")
+                        .background(GeometryReader { marker in
+                            Color.clear.preference(key: ConversationEnd.self, value: marker.frame(in: .named("conversation")).maxY)
+                        })
                 }
                 .padding(16)
             }
-            .onAppear { proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: model.visibleTurns.count) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
-            .onChange(of: model.card) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            .coordinateSpace(name: "conversation")
+            .onPreferenceChange(ConversationEnd.self) { end in
+                let atBottom = ChatScroll.atBottom(endY: Double(end), viewport: Double(outer.size.height))
+                if !atBottom, Date() < followUntil { return }
+                if pinned != atBottom { pinned = atBottom }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !pinned {
+                    Button { follow(.switchedView, proxy, animated: true) } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(Circle().fill(Brand.purple))
+                            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(14)
+                    .help("Jump to the latest")
+                    .transition(.opacity)
+                }
+            }
+            .onAppear { follow(.switchedView, proxy) }
+            .onChange(of: model.sentCount) { _ in follow(.yourMessage, proxy, animated: true) }
+            .onChange(of: contentKey) { _ in follow(.newContent, proxy, animated: true) }
+            .onChange(of: "\(model.thread ?? "")|\(model.isPrivate)") { _ in follow(.switchedView, proxy) }
+            // The composer grew, a strip appeared, the window was resized: stay at the latest if you were there.
+            .onChange(of: outer.size.height) { _ in follow(.newContent, proxy) }
+        }
+        }
+    }
+
+    /// Everything that can appear at the end of the conversation.
+    private var contentKey: String {
+        let last = model.visibleTurns.last
+        var parts: [String] = ["\(model.visibleTurns.count)", last?.id ?? "", "\(last?.text.count ?? 0)"]
+        parts.append(model.thinking ? "thinking" : "")
+        parts.append(model.reading ?? "")
+        parts.append("\(model.card?.items.count ?? -1)")
+        parts.append(model.proposal == nil ? "" : "proposal")
+        parts.append(model.problem ?? "")
+        parts.append(voice.problem ?? "")
+        parts.append(model.canRetry ? "retry" : "")
+        return parts.joined(separator: "|")
+    }
+
+    private func follow(_ change: ChatScroll.Change, _ proxy: ScrollViewProxy, animated: Bool = false) {
+        guard ChatScroll.follows(change, pinned: pinned) else { return }
+        followUntil = Date().addingTimeInterval(0.8)
+        pinned = true
+        // Once the new content is laid out.
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
+            } else {
+                proxy.scrollTo("end", anchor: .bottom)
+            }
         }
     }
 
@@ -967,7 +1068,7 @@ struct HomeView: View {
             VStack(alignment: .trailing, spacing: 6) {
                 HStack {
                     Spacer(minLength: 60)
-                    Text(turn.text)
+                    Text(ReplyText.plain(turn.text))
                         .font(.system(size: 13.5)).textSelection(.enabled)
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .background(RoundedRectangle(cornerRadius: 14).fill(Brand.purple.opacity(0.15)))
@@ -994,7 +1095,7 @@ struct HomeView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(nsImage: BroskiArt.avatar(diameter: 24, crowned: false)).frame(width: 24, height: 24)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text((try? AttributedString(markdown: turn.text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.text))
+                    Text(ReplyText.rendered(turn.text))
                         .font(.system(size: 13.5)).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     if let sources = turn.sources, !sources.isEmpty {
@@ -1093,10 +1194,7 @@ struct HomeView: View {
             HStack(spacing: 6) {
                 if model.riffing {
                     ForEach(RiffMode.moves.filter { ["Pre-mortem", "10x it", "First principles", "Ethics check"].contains($0.name) }, id: \.name) { move in
-                        chip(move.name) {
-                            model.draft = move.ask
-                            model.send()
-                        }
+                        chip(move.name) { model.send(move.ask) }
                         .help(move.ask)
                     }
                     chip("Wrap up") { model.endRiff() }
@@ -1106,10 +1204,7 @@ struct HomeView: View {
                 chip("Riff") { model.startRiff(about: nil) }
                 }
                 if let project = model.project, !model.isPrivate, !model.riffing {
-                    chip("What do you know about \(project)?") {
-                        model.draft = "What do you know about \(project)?"
-                        model.send()
-                    }
+                    chip("What do you know about \(project)?") { model.send("What do you know about \(project)?") }
                 }
             }
             .padding(.horizontal, 1)
@@ -1120,7 +1215,6 @@ struct HomeView: View {
                     Spacer()
                     Button("Cancel") { voice.cancel() }
                         .buttonStyle(.borderless).font(.system(size: 12))
-                        .keyboardShortcut(.cancelAction)
                         .help("Stop listening without sending (Esc)")
                 }
             } else if model.speaking && !model.thinking {
@@ -1130,7 +1224,6 @@ struct HomeView: View {
                     Spacer()
                     Button { model.stopSpeaking() } label: { Label("Stop speaking", systemImage: "stop.fill") }
                         .buttonStyle(.borderless).font(.system(size: 12))
-                        .keyboardShortcut(.cancelAction)
                         .help("Stop reading the reply aloud (Esc)")
                 }
             }
@@ -1153,13 +1246,10 @@ struct HomeView: View {
                     .buttonStyle(.borderless).help("Share files: kept in the project's resources")
                 Button { model.takeScreenshot() } label: { Image(systemName: "camera.viewfinder") }
                     .buttonStyle(.borderless).help("Screenshot: this window steps aside; click a window or drag an area (Esc cancels)")
-                TextField(model.riffing ? "Riff: say what's on your mind, or “rule: …”" : "Talk to Broski, or type “note: …”",
-                          text: $model.draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .lineLimit(1...6)
-                    .focused($focused)
-                    .onSubmit { model.send() }
+                ComposerField(text: $model.draft,
+                              placeholder: model.riffing ? "Riff: say what's on your mind, or “rule: …”" : "Talk to Broski, or type “note: …”",
+                              onSend: { model.send() }, onRecall: { model.lastSaid() },
+                              onFiles: { model.attach($0) }, onEscape: { model.escape() })
                 if voice.transcribing { ProgressView().controlSize(.small) }
                 Button("Note") { model.quickNote() }
                     .buttonStyle(.borderless).foregroundStyle(Brand.purple)
@@ -1184,7 +1274,6 @@ struct HomeView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!model.thinking && !canSend)
-                .keyboardShortcut(model.thinking ? .cancelAction : nil)
                 .help(model.thinking ? "Stop the reply (Esc)" : "Send (Return)")
             }
             .padding(10)
@@ -1214,8 +1303,9 @@ struct HomeView: View {
                     .menuStyle(.borderlessButton).fixedSize()
                     .help("Show one thread of the conversation")
                 }
-                Text("Return sends · Esc stops · hold fn to talk · “note: …” saves without a reply")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Return sends · Shift-Return new line · Esc stops · hold fn to talk")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    .help("“note: …” saves without a reply · Up brings back your last message · paste or drop files and images")
             }
         }
         .padding(12)
@@ -1253,4 +1343,10 @@ struct HomeView: View {
         .buttonStyle(.plain)
         .disabled(model.thinking)
     }
+}
+
+/// Where the conversation's last line is, in the visible area's coordinates.
+private struct ConversationEnd: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

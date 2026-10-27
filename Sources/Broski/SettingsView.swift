@@ -617,6 +617,13 @@ private struct AISettings: View {
     @State private var status: String?
     @State private var checking = false
 
+    private func save() {
+        guard !key.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        brain.setKey(key)
+        key = ""
+        check()
+    }
+
     var body: some View {
         Form {
             Section {
@@ -624,11 +631,8 @@ private struct AISettings: View {
                     HStack {
                         SecureField(brain.hasKey ? "Saved on this Mac" : "sk-ant-…", text: $key)
                             .frame(width: 240)
-                        Button("Save") {
-                            brain.setKey(key)
-                            key = ""
-                            check()
-                        }
+                            .onSubmit(save)
+                        Button("Save", action: save)
                         .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }

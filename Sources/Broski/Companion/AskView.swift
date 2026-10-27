@@ -24,6 +24,7 @@ final class AskModel: ObservableObject {
 
     func reset(project: String?) {
         task?.cancel()
+        voice.problem = nil
         question = project.map { "In \($0), " } ?? ""
         answer = nil
         problem = nil
@@ -40,7 +41,7 @@ final class AskModel: ObservableObject {
         saved = nil
         task?.cancel()
         task = Task {
-            defer { asking = false }
+            defer { if !Task.isCancelled { asking = false } }
             do {
                 answer = try await library.ask(q)
                 Log.info("Asked Broski (\(answer?.sources.count ?? 0) sources)")
@@ -83,7 +84,6 @@ final class AskModel: ObservableObject {
 struct AskView: View {
     @ObservedObject var model: AskModel
     @ObservedObject var voice: VoiceInput
-    @FocusState private var focused: Bool
 
     var body: some View {
         CompanionCard {
@@ -92,12 +92,8 @@ struct AskView: View {
                     Image(systemName: "sparkle.magnifyingglass")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Brand.purple)
-                    TextField("Ask about your notes… “what did I decide about pricing?”", text: $model.question, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 17))
-                        .lineLimit(1...3)
-                        .focused($focused)
-                        .onSubmit { model.ask() }
+                    ComposerField(text: $model.question, placeholder: "Ask about your notes… “what did I decide about pricing?”",
+                                  fontSize: 17, maxLines: 3, onSend: { model.ask() }, onEscape: { model.onClose() })
                     if model.asking || voice.transcribing { ProgressView().controlSize(.small) }
                     Button { model.toggleVoice() } label: {
                         Image(systemName: voice.listening ? "stop.fill" : "mic")
@@ -179,8 +175,6 @@ struct AskView: View {
             .padding(16)
         }
         .onExitCommand { model.onClose() }
-        .onAppear { focused = true }
-        .onReceive(model.$focusTick) { _ in focused = true }
     }
 }
 
@@ -195,7 +189,9 @@ struct AnswerText: View {
             var out = result
             switch piece {
             case .text(let string):
-                out += (try? AttributedString(markdown: string, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(string)
+                // After a citation the text continues its line: "- " there isn't a list.
+                let lineStart = out.characters.isEmpty || out.characters.last == "\n"
+                out += ReplyText.rendered(string, atLineStart: lineStart)
             case .cite(let id, let number):
                 var cite = AttributedString(" \(number) ")
                 cite.foregroundColor = Brand.purple

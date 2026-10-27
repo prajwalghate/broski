@@ -15,7 +15,8 @@ struct AskScreen: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        NavigationStack {
+        // Pushed from Talk's navigation stack: a stack of its own inside it would double the bar.
+        Group {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 10) {
@@ -24,6 +25,12 @@ struct AskScreen: View {
                             .focused($focused)
                             .submitLabel(.search)
                             .onSubmit { ask() }
+                            // A question is one line: Return asks it (a multi-line field would add a line instead).
+                            .onChange(of: question) { _, typed in
+                                guard typed.contains("\n") else { return }
+                                question = typed.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+                                ask()
+                            }
                         Button { toggleVoice() } label: {
                             Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill")
                                 .foregroundStyle(.white)
@@ -48,7 +55,7 @@ struct AskScreen: View {
                     if let answer {
                         Text(attributed(answer))
                             .textSelection(.enabled)
-                            .environment(\.openURL, OpenURLAction { _ in .handled })
+                            .environment(\.openURL, OpenURLAction { url in url.scheme?.hasPrefix("http") == true ? .systemAction : .handled })
                         if !answer.sources.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("SOURCES").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -123,7 +130,7 @@ struct AskScreen: View {
             var out = result
             switch piece {
             case .text(let s):
-                out += (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+                out += ReplyText.rendered(s, atLineStart: out.characters.isEmpty || out.characters.last == "\n")
             case .cite(_, let n):
                 var c = AttributedString(" \(n) ")
                 c.foregroundColor = Brand.purple

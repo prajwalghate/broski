@@ -45,6 +45,11 @@ final class CompanionPanel: NSPanel {
     override var canBecomeKey: Bool { focusable }
     override var canBecomeMain: Bool { false }
 
+    /// ⌘W closes it like Esc does (it has no close button, so the system would only beep).
+    override func performClose(_ sender: Any?) {
+        onClose?()
+    }
+
     override func cancelOperation(_ sender: Any?) {
         onClose?()
     }
@@ -166,6 +171,14 @@ final class VoiceInput: ObservableObject {
         guard !listening, !transcribing else { return }
         guard !capture.isCapturing else { return problem = "Finish the open note first." }
         guard Permissions.microphone == .granted else { return problem = "Allow the microphone in System Settings to talk to Broski." }
+        // Without a voice model what you say can't be written out: say so now, not after you've talked for a minute.
+        if !capture.transcription.isReady {
+            switch capture.transcription.state {
+            case .downloading(let done): return problem = "The voice model is still downloading (\(Int(done * 100))%). Type for now, or try again in a minute."
+            case .failed: return problem = "The voice model didn't load. Download it again in Settings › Voice to talk here."
+            default: break
+            }
+        }
         do {
             try capture.engine.beginDictation(replay: 0, live: false)
             listening = true
@@ -175,7 +188,7 @@ final class VoiceInput: ObservableObject {
             ticker?.invalidate()
             ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
         } catch {
-            problem = "Mic unavailable: \(error.localizedDescription)"
+            problem = capture.engine.startProblem(error)
         }
     }
 
@@ -210,18 +223,22 @@ final class VoiceInput: ObservableObject {
         let peak = capture.engine.peakSinceDictation
         let audio = capture.engine.takeRecording()
         capture.engine.resumeIdle()
+        transcribing = true
+        defer { transcribing = false }
+        // Just after launch the model may still be loading: give it a few seconds before giving up on what you said.
+        let deadline = Date().addingTimeInterval(10)
+        while !capture.transcription.isReady, Date() < deadline { try? await Task.sleep(nanoseconds: 200_000_000) }
         guard capture.transcription.isReady else {
             problem = "Download the voice model in Settings › Voice to talk here."
             return ""
         }
-        transcribing = true
-        defer { transcribing = false }
         do {
             let text = try await capture.transcription.transcribe(audio, language: Transcription.language(for: capture.config.locale), vocabulary: vocabulary)
             problem = MicVerdict.of(peak: peak, heardWords: !text.isEmpty).message(mic: micName)
             return text
         } catch {
-            problem = "Couldn't transcribe: \(error.localizedDescription)"
+            Log.info("Transcription failed: \(error)")
+            problem = "Couldn't write out what you said. Try again, or type it."
             return ""
         }
     }

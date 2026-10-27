@@ -635,7 +635,7 @@ final class CaptureController: NSObject {
         do {
             try engine.beginDictation(replay: replay, live: live)
         } catch {
-            model.detail = "Mic unavailable: \(error.localizedDescription)"
+            model.detail = engine.startProblem(error)
             return
         }
         accumulator = TranscriptAccumulator()

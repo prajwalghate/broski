@@ -529,8 +529,9 @@ struct PanelView: View {
             Text(footerText)
                 .font(.system(size: 11))
                 .foregroundStyle(model.phase == .error ? Color.red : .secondary)
-                .lineLimit(1)
+                .lineLimit(model.phase == .error ? 2 : 1)
                 .truncationMode(.middle)
+                .help(footerText)
             Spacer()
             switch model.phase {
             case .listening, .typing:
