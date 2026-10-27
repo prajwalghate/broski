@@ -29,6 +29,9 @@ final class PhoneHome: ObservableObject {
     @Published var proposal: ProjectProposal?
     @Published var problem: String?
     @Published var speak: Bool { didSet { UserDefaults.standard.set(speak, forKey: Self.speakKey) ; if !speak { voice.stop() } } }
+    /// Reading a reply aloud now: Talk offers Stop.
+    @Published private(set) var speaking = false
+    @Published var speed: ReplySpeed = ReplyVoice.speed { didSet { ReplyVoice.speed = speed } }
 
     private let store: PhoneStore
     private let voice = ReplyVoice()
@@ -43,6 +46,7 @@ final class PhoneHome: ObservableObject {
         self.store = store
         speak = UserDefaults.standard.bool(forKey: Self.speakKey)
         reload()
+        voice.onSpeaking = { [weak self] on in self?.speaking = on }
     }
 
     private var lastFingerprint = ""
@@ -239,7 +243,7 @@ final class PhoneHome: ObservableObject {
             do {
                 let (reply, route) = try await gateway.send(request, role: role, project: project, localOnly: localOnly,
                                                             task: riff ? "riff" : "conversation")
-                guard wasPrivate == isPrivate else { return }
+                guard wasPrivate == isPrivate, !Task.isCancelled else { return }
                 let (text, cited) = Recall.cited(in: reply.text, hits: recall)
                 var sources = cited
                 if route.overBudget { sources.append("Past today's limit: \(route.model)") }
@@ -249,10 +253,19 @@ final class PhoneHome: ObservableObject {
                 if speak { voice.say(text) }
                 // No save cards while you riff: the wrap-up offers one at the end.
                 if !wasPrivate, !riff { suggestSave(force: false) }
-            } catch {
+            } catch where !Cancellation.isStop(error) {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
+            } catch {}
         }
+    }
+
+    /// Stop: drops the reply being written (or the links being read, the wrap-up, the pack draft). What you said stays.
+    func stopReply() {
+        guard thinking else { return }
+        task?.cancel()
+        task = nil
+        thinking = false
+        reading = nil
     }
 
     private func run(_ command: ConversationCommand) {
@@ -310,14 +323,15 @@ final class PhoneHome: ObservableObject {
             let context = turns
             let gateway = canTalk ? self.gateway : nil
             thinking = true
-            Task {
+            task = Task {
                 defer { thinking = false }
                 do {
                     let said = try await Packs.draft(name: name, context: context, gateway: gateway, root: store.root)
+                    guard !Task.isCancelled else { return }
                     add(Turn(device: "iphone", speaker: .note, text: said, project: project))
-                } catch {
+                } catch where !Cancellation.isStop(error) {
                     problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                }
+                } catch {}
             }
         }
     }
@@ -415,14 +429,15 @@ final class PhoneHome: ObservableObject {
         let localOnly = touchesLocalOnly(request.messages.map(\.text).joined())
         thinking = true
         reading = "Wrapping up the riff…"
-        Task {
+        task = Task {
             defer { thinking = false; reading = nil }
             do {
                 let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly, task: "wrap-up")
+                guard !Task.isCancelled else { return }
                 if let wrapped = RiffMode.card(from: reply.text, project: project) { card = wrapped } else { problem = "Nothing from the riff to save." }
-            } catch {
+            } catch where !Cancellation.isStop(error) {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
+            } catch {}
         }
     }
 
@@ -536,7 +551,12 @@ struct TalkScreen: View {
                             }
                             ForEach(model.visibleTurns) { turn in row(turn).id(turn.id) }
                             if model.thinking {
-                                HStack(spacing: 8) { ProgressView(); Text(model.reading ?? "Thinking…").foregroundStyle(.secondary) }.font(.callout)
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                    Text(model.reading ?? "Thinking…").foregroundStyle(.secondary)
+                                    Button("Stop") { model.stopReply() }.font(.callout.weight(.semibold))
+                                }
+                                .font(.callout)
                             }
                             if let card = model.card { cardView(card) }
                             if let proposal = model.proposal { proposalView(proposal) }
@@ -612,6 +632,10 @@ struct TalkScreen: View {
             Menu {
                 Toggle(isOn: $model.deep) { Label("Think harder", systemImage: "brain") }
                 Toggle(isOn: $model.speak) { Label("Read replies aloud", systemImage: "speaker.wave.2") }
+                Picker(selection: $model.speed) {
+                    ForEach(ReplySpeed.allCases, id: \.self) { Text($0.name).tag($0) }
+                } label: { Label("Reading speed", systemImage: "gauge.with.dots.needle.33percent") }
+                .pickerStyle(.menu)
                 Button { model.suggestSave(force: true) } label: { Label("Save that", systemImage: "tray.and.arrow.down") }
                     .disabled(model.isPrivate || model.riffing)
                 Divider()
@@ -807,6 +831,12 @@ struct TalkScreen: View {
                 }
             } else if recorder.finishing {
                 Label("Writing it out…", systemImage: "waveform").font(.callout).foregroundStyle(Brand.purple)
+            } else if model.speaking {
+                HStack(spacing: 8) {
+                    Label("Reading the reply aloud", systemImage: "speaker.wave.2.fill").font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    Button { model.stopSpeaking() } label: { Label("Stop", systemImage: "stop.fill") }.font(.callout.weight(.semibold))
+                }
             }
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
@@ -821,11 +851,15 @@ struct TalkScreen: View {
                     .lineLimit(1...5)
                     .focused($focused)
                     .padding(.vertical, 8)
-                if (!model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.pending.isEmpty), !recorder.isRecording {
+                if model.thinking {
+                    Button { model.stopReply() } label: {
+                        Image(systemName: "stop.circle.fill").font(.system(size: 32)).foregroundStyle(Brand.purple)
+                    }
+                    .accessibilityLabel("Stop the reply")
+                } else if (!model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.pending.isEmpty), !recorder.isRecording {
                     Button { model.send() } label: {
                         Image(systemName: "arrow.up.circle.fill").font(.system(size: 32)).foregroundStyle(Brand.purple)
                     }
-                    .disabled(model.thinking)
                     .accessibilityLabel("Send")
                 }
                 Button { toggleMic() } label: {

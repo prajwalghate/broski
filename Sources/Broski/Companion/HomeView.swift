@@ -32,6 +32,8 @@ final class HomeModel: ObservableObject {
     @Published var proposal: ProjectProposal?
     @Published var problem: String?
     @Published var speak: Bool
+    /// Reading a reply aloud now: the window offers Stop.
+    @Published private(set) var speaking = false
 
     let library: Library
     let voice: VoiceInput
@@ -44,7 +46,7 @@ final class HomeModel: ObservableObject {
     var openVault: (String?) -> Void = { _ in }
     private let root: URL
     private let config: () -> BroskiConfig
-    private let synthesizer = AVSpeechSynthesizer()
+    let speaker = ReplySpeaker()
     /// A private conversation lives only here, never on disk.
     private var privateTurns: [Turn] = []
     private var task: Task<Void, Never>?
@@ -59,6 +61,7 @@ final class HomeModel: ObservableObject {
         self.config = config
         speak = config().speakReplies
         reload()
+        speaker.onSpeaking = { [weak self] on in self?.speaking = on }
     }
 
     /// The recent conversation from every device, and the project it was last about.
@@ -340,14 +343,14 @@ final class HomeModel: ObservableObject {
             do {
                 let (reply, route) = try await gateway.send(request, role: role, project: project, localOnly: localOnly,
                                                             task: riff ? "riff" : "conversation")
-                guard wasPrivate == isPrivate else { return }
+                guard wasPrivate == isPrivate, !Task.isCancelled else { return }
                 let (text, cited) = Recall.cited(in: reply.text, hits: recall)
                 var sources = cited
                 if route.overBudget { sources.append("Past today's limit: \(route.model)") }
                 if route.substituted { sources.append("On this Mac: \(route.model)") }
                 add(Turn(device: "mac", speaker: .broski, text: text, project: project, topic: topic, model: route.model,
                          sources: sources.isEmpty ? nil : sources, mode: riff ? "riff" : nil))
-                if speak { say(text) }
+                if speak { speaker.say(text) }
                 // No save cards while you riff: the wrap-up offers one at the end.
                 if !wasPrivate, !riff { suggestSave(force: false) }
                 if !wasPrivate, FirstRun.justFinished(turns: turns) {
@@ -357,11 +360,22 @@ final class HomeModel: ObservableObject {
                                  project: self.project))
                     }
                 }
-            } catch {
+            } catch where !Cancellation.isStop(error) {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
+            } catch {}
         }
     }
+
+    /// Stop: drops the reply being written (or the links being read, the wrap-up, the pack draft). What you said stays.
+    func stopReply() {
+        guard thinking else { return }
+        task?.cancel()
+        task = nil
+        thinking = false
+        reading = nil
+    }
+
+    func stopSpeaking() { speaker.stop() }
 
     private func run(_ command: ConversationCommand) {
         switch command {
@@ -417,14 +431,15 @@ final class HomeModel: ObservableObject {
             let context = turns
             let gateway = needsModel ? nil : self.gateway
             thinking = true
-            Task {
+            task = Task {
                 defer { thinking = false }
                 do {
                     let said = try await Packs.draft(name: name, context: context, gateway: gateway, root: root)
+                    guard !Task.isCancelled else { return }
                     add(Turn(device: "mac", speaker: .note, text: said, project: project))
-                } catch {
+                } catch where !Cancellation.isStop(error) {
                     problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                }
+                } catch {}
             }
         case .connect(let path):
             guard let project else { return problem = "Pick the project first (the menu below), then connect its folder." }
@@ -543,18 +558,19 @@ final class HomeModel: ObservableObject {
         let localOnly = touchesLocalOnly(request.messages.map(\.text).joined())
         thinking = true
         reading = "Wrapping up the riff…"
-        Task {
+        task = Task {
             defer { thinking = false; reading = nil }
             do {
                 let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly, task: "wrap-up")
+                guard !Task.isCancelled else { return }
                 if let wrapped = RiffMode.card(from: reply.text, project: project) {
                     card = wrapped
                 } else {
                     problem = "Nothing from the riff to save."
                 }
-            } catch {
+            } catch where !Cancellation.isStop(error) {
                 problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
+            } catch {}
         }
     }
 
@@ -634,27 +650,27 @@ final class HomeModel: ObservableObject {
                 send()
             }
         } else {
-            synthesizer.stopSpeaking(at: .immediate)
+            speaker.stop()
             voice.start()
         }
+    }
+
+    /// Esc: lets go of the mic without sending, or stops the reply, or stops reading it aloud.
+    func escape() {
+        if voice.listening { return voice.cancel() }
+        if thinking { return stopReply() }
+        stopSpeaking()
     }
 
     /// fn held: start listening; let go: send what was said.
     func holdStart() {
         guard !voice.listening else { return }
-        synthesizer.stopSpeaking(at: .immediate)
+        speaker.stop()
         voice.start()
     }
 
     func holdEnd() {
         if voice.listening { toggleVoice() }
-    }
-
-    private func say(_ text: String) {
-        let utterance = AVSpeechUtterance(string: text.replacingOccurrences(of: "*", with: ""))
-        utterance.rate = 0.52
-        synthesizer.stopSpeaking(at: .immediate)
-        synthesizer.speak(utterance)
     }
 }
 
@@ -701,7 +717,11 @@ struct HomeView: View {
         }
         .onAppear { focused = true }
         // Back from Settings with a key or a model: look again.
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in model.objectWillChange.send() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            model.objectWillChange.send()
+            voice.refreshMic()
+        }
+        .onExitCommand { model.escape() }
     }
 
     private var header: some View {
@@ -721,9 +741,7 @@ struct HomeView: View {
                 .foregroundStyle(Brand.purple)
                 .help(model.riffing ? "Riffing: brainstorming on the deep model, by the rules"
                       : model.deep ? "Replies come from the deep model" : "Replies come from the everyday model")
-            Toggle("Speak", isOn: Binding(get: { model.speak }, set: { model.speak = $0; model.onSpeakChange($0) }))
-                .toggleStyle(.switch).controlSize(.mini)
-                .help("Read Broski's replies aloud")
+            voiceMenu
             if model.project != nil {
                 Button { model.openProjectFolder() } label: { Image(systemName: "folder") }
                     .buttonStyle(.borderless).help("Open the project's folder: resources, setup drafts, tracker")
@@ -747,6 +765,28 @@ struct HomeView: View {
             .help(model.isPrivate ? "Leave private mode" : "Go private: Broski starts blank and keeps nothing")
         }
         .padding(12)
+    }
+
+    /// Reading replies aloud: on or off, which voice, how fast, and Stop.
+    private var voiceMenu: some View {
+        Menu {
+            Toggle("Read replies aloud", isOn: Binding(get: { model.speak }, set: { model.speak = $0; model.onSpeakChange($0) }))
+            Picker("Voice", selection: Binding(get: { ReplySpeaker.voice ?? "" }, set: { ReplySpeaker.voice = $0.isEmpty ? nil : $0; model.objectWillChange.send() })) {
+                Text("System voice").tag("")
+                Divider()
+                ForEach(ReplySpeaker.voices, id: \.id) { Text($0.label).tag($0.id) }
+            }
+            Picker("Speed", selection: Binding(get: { ReplySpeaker.speed }, set: { ReplySpeaker.speed = $0; model.objectWillChange.send() })) {
+                ForEach(ReplySpeed.allCases, id: \.self) { Text($0.name).tag($0) }
+            }
+            Divider()
+            Button("Stop speaking") { model.stopSpeaking() }.disabled(!model.speaking)
+        } label: {
+            Image(systemName: model.speak ? "speaker.wave.2.fill" : "speaker.slash")
+                .foregroundStyle(model.speak ? Brand.purple : .secondary)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help(model.speak ? "Replies are read aloud: voice, speed, stop" : "Replies aren't read aloud: turn it on, pick a voice and speed")
     }
 
     /// Riffing: the rules in play (yours as chips, each removable), adding one, and Wrap up.
@@ -1073,6 +1113,27 @@ struct HomeView: View {
                 }
             }
             .padding(.horizontal, 1)
+            if voice.listening {
+                HStack(spacing: 8) {
+                    MicMeter(meter: voice.meter)
+                    Text("Listening on \(voice.micName)").font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                    Button("Cancel") { voice.cancel() }
+                        .buttonStyle(.borderless).font(.system(size: 12))
+                        .keyboardShortcut(.cancelAction)
+                        .help("Stop listening without sending (Esc)")
+                }
+            } else if model.speaking && !model.thinking {
+                HStack(spacing: 8) {
+                    Image(systemName: "speaker.wave.2.fill").foregroundStyle(Brand.purple)
+                    Text("Reading the reply aloud").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button { model.stopSpeaking() } label: { Label("Stop speaking", systemImage: "stop.fill") }
+                        .buttonStyle(.borderless).font(.system(size: 12))
+                        .keyboardShortcut(.cancelAction)
+                        .help("Stop reading the reply aloud (Esc)")
+                }
+            }
             if !model.pending.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(model.pending, id: \.self) { url in
@@ -1103,14 +1164,28 @@ struct HomeView: View {
                 Button("Note") { model.quickNote() }
                     .buttonStyle(.borderless).foregroundStyle(Brand.purple)
                     .help("Save what's typed as a note, without a reply")
-                Button { model.toggleVoice() } label: {
-                    Image(systemName: voice.listening ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(voice.listening ? Color.red : Brand.purple))
+                HStack(spacing: 1) {
+                    Button { model.toggleVoice() } label: {
+                        Image(systemName: voice.listening ? "stop.fill" : "mic.fill")
+                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(voice.listening ? Color.red : Brand.purple))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(voice.transcribing)
+                    .help(voice.listening ? "Done talking: send what you said" : "Talk on \(voice.micName) (or hold fn)")
+                    micMenu
+                }
+                Button {
+                    model.thinking ? model.stopReply() : model.send()
+                } label: {
+                    Image(systemName: model.thinking ? "stop.circle.fill" : "arrow.up.circle.fill")
+                        .font(.system(size: 26)).foregroundStyle(model.thinking || canSend ? Brand.purple : Color.secondary.opacity(0.5))
                 }
                 .buttonStyle(.plain)
-                .help(voice.listening ? "Done talking" : "Talk (or hold fn)")
+                .disabled(!model.thinking && !canSend)
+                .keyboardShortcut(model.thinking ? .cancelAction : nil)
+                .help(model.thinking ? "Stop the reply (Esc)" : "Send (Return)")
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.4)))
@@ -1139,11 +1214,34 @@ struct HomeView: View {
                     .menuStyle(.borderlessButton).fixedSize()
                     .help("Show one thread of the conversation")
                 }
-                Text("Return sends · hold fn to talk · “note: …” saves without a reply")
+                Text("Return sends · Esc stops · hold fn to talk · “note: …” saves without a reply")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
         .padding(12)
+    }
+
+    private var canSend: Bool {
+        !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.pending.isEmpty
+    }
+
+    /// Which mic to listen on: the system's, or one you pick (kept on this Mac).
+    private var micMenu: some View {
+        Menu {
+            Picker("Listen on", selection: Binding(get: { Microphones.chosen ?? "" }, set: { voice.choose(mic: $0.isEmpty ? nil : $0) })) {
+                Text("System mic (\(voice.systemMicName))").tag("")
+                Divider()
+                ForEach(voice.mics, id: \.uid) { Text($0.name).tag($0.uid) }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Button("Voice settings…") { model.openSettings(.voice) }
+        } label: {
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .disabled(voice.listening)
+        .help("Choose the mic: now \(voice.micName)")
     }
 
     private func chip(_ title: String, action: @escaping () -> Void) -> some View {

@@ -146,7 +146,15 @@ final class VoiceInput: ObservableObject {
     @Published private(set) var listening = false
     @Published private(set) var transcribing = false
     @Published var problem: String?
+    /// 0...1 while listening, for the meter (its own object, so the conversation doesn't redraw ten times a second).
+    let meter = MicLevel()
+    /// The mic Broski is listening on (or will, next time), and the others it could use.
+    @Published private(set) var micName = Microphones.current
+    @Published private(set) var mics = Microphones.all()
+    @Published private(set) var systemMicName = Microphones.systemDefaultName ?? "none"
     private let capture: CaptureController
+    private var ticker: Timer?
+    private var started = Date()
 
     init(capture: CaptureController) {
         self.capture = capture
@@ -162,15 +170,44 @@ final class VoiceInput: ObservableObject {
             try capture.engine.beginDictation(replay: 0, live: false)
             listening = true
             problem = nil
+            micName = capture.engine.microphoneName
+            started = Date()
+            ticker?.invalidate()
+            ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
         } catch {
             problem = "Mic unavailable: \(error.localizedDescription)"
         }
     }
 
-    /// Stops and returns what was said ("" for nothing).
+    /// The meter, and a word as soon as it's clear the mic is sending nothing (no need to wait until you stop).
+    private func tick() {
+        guard listening else { return }
+        meter.level = capture.engine.level
+        if Date().timeIntervalSince(started) > 2.5, capture.engine.peakSinceDictation < AudioMix.deadLevel, problem == nil {
+            problem = MicVerdict.noSound.message(mic: micName)
+        }
+    }
+
+    /// Lets go of the mic without sending anything (Esc).
+    func cancel() {
+        guard listening else { return }
+        endListening()
+        _ = capture.engine.takeRecording()
+        capture.engine.resumeIdle()
+    }
+
+    private func endListening() {
+        listening = false
+        ticker?.invalidate()
+        ticker = nil
+        meter.level = 0
+    }
+
+    /// Stops and returns what was said ("" for nothing, with a problem saying why).
     func stop(vocabulary: [String]) async -> String {
         guard listening else { return "" }
-        listening = false
+        endListening()
+        let peak = capture.engine.peakSinceDictation
         let audio = capture.engine.takeRecording()
         capture.engine.resumeIdle()
         guard capture.transcription.isReady else {
@@ -180,10 +217,49 @@ final class VoiceInput: ObservableObject {
         transcribing = true
         defer { transcribing = false }
         do {
-            return try await capture.transcription.transcribe(audio, language: Transcription.language(for: capture.config.locale), vocabulary: vocabulary)
+            let text = try await capture.transcription.transcribe(audio, language: Transcription.language(for: capture.config.locale), vocabulary: vocabulary)
+            problem = MicVerdict.of(peak: peak, heardWords: !text.isEmpty).message(mic: micName)
+            return text
         } catch {
             problem = "Couldn't transcribe: \(error.localizedDescription)"
             return ""
         }
+    }
+
+    /// Listen on this mic from now on (nil: the system's).
+    func choose(mic uid: String?) {
+        Microphones.chosen = uid
+        micName = Microphones.current
+        problem = nil
+        capture.engine.reopenMicrophone()
+    }
+
+    /// The mic list changed or the window came back: show the right name.
+    func refreshMic() {
+        mics = Microphones.all()
+        systemMicName = Microphones.systemDefaultName ?? "none"
+        if !listening { micName = Microphones.current }
+    }
+}
+
+final class MicLevel: ObservableObject {
+    @Published var level: Float = 0
+}
+
+/// Five bars that move with your voice: proof the mic hears you.
+struct MicMeter: View {
+    @ObservedObject var meter: MicLevel
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<5) { i in
+                Capsule()
+                    .fill(meter.level > Float(i) * 0.18 ? Color.red : Color.secondary.opacity(0.3))
+                    .frame(width: 3, height: 6 + CGFloat(i) * 2.5)
+            }
+        }
+        .frame(height: 18)
+        .animation(.easeOut(duration: 0.1), value: meter.level)
+        .accessibilityLabel("Mic level")
     }
 }

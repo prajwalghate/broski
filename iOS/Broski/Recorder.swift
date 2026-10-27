@@ -99,6 +99,7 @@ final class Recorder: ObservableObject {
         partial = ""
         transcript = ""
         failures = 0
+        feed.resetPeak()
         startTask()
         audio.reset()
         let keepAudio = PhoneBark.shared.usable
@@ -137,12 +138,20 @@ final class Recorder: ObservableObject {
         }
         let recording = audio.take()
         let heard = stopNow()
-        guard !recording.isEmpty else { return heard }
+        let peak = feed.peak
+        guard !recording.isEmpty else { return said(heard, peak: peak) }
         finishing = true
         defer { finishing = false }
-        guard let written = await PhoneBark.shared.transcribe(recording, vocabulary: vocabulary()) else { return heard }
+        guard let written = await PhoneBark.shared.transcribe(recording, vocabulary: vocabulary()) else { return said(heard, peak: peak) }
         transcript = written
-        return written
+        return said(written, peak: peak)
+    }
+
+    /// Nothing heard gets a reason: the mic sent nothing at all (another app holds it), or no words came through.
+    private func said(_ text: String, peak: Float) -> String {
+        let verdict = MicVerdict.of(peak: peak, heardWords: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        if let why = verdict.message(mic: "the microphone", canChoose: false) { problem = why }
+        return text
     }
 
     /// Stops at once (going to the background, the mic taken away) and returns everything heard so far.
@@ -257,8 +266,27 @@ final class RequestFeed: @unchecked Sendable {
     }
 
     func append(_ buffer: AVAudioPCMBuffer) {
+        var loudest: Float = 0
+        if let samples = buffer.floatChannelData?[0] {
+            for i in 0..<Int(buffer.frameLength) { loudest = max(loudest, abs(samples[i])) }
+        }
         lock.lock()
         request?.append(buffer)
+        heardPeak = max(heardPeak, loudest)
+        lock.unlock()
+    }
+
+    /// The loudest sample since `resetPeak`: none at all means the mic sent nothing (another app holds it).
+    private var heardPeak: Float = 0
+    var peak: Float {
+        lock.lock()
+        defer { lock.unlock() }
+        return heardPeak
+    }
+
+    func resetPeak() {
+        lock.lock()
+        heardPeak = 0
         lock.unlock()
     }
 

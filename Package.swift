@@ -24,7 +24,7 @@ let package = Package(
         // Transcribes audio files through BroskiBark: `swift run BarkCheck <model folder> <audio>... [--expect text]`.
         .executableTarget(name: "BarkCheck", dependencies: ["BroskiBark"]),
         // Local speech-to-text: whisper.cpp (Metal) behind a small Swift API.
-        .target(name: "BroskiWhisper", dependencies: ["whisper"]),
+        .target(name: "BroskiWhisper", dependencies: ["whisper", "BroskiCore"]),
         // Transcribes an audio file through BroskiWhisper: `swift run WhisperCheck <audio> [model]`.
         .executableTarget(name: "WhisperCheck", dependencies: ["BroskiWhisper"]),
         // Official prebuilt whisper.cpp XCFramework (b5454 == v1.9.5), dynamic framework with Metal.

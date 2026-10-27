@@ -313,6 +313,38 @@ enum FolderPicker {
 
 // MARK: Voice
 
+/// The mic Broski listens on (this Mac's own choice), and how replies are read aloud.
+private struct MicSettings: View {
+    @ObservedObject var voice: VoiceInput
+    @Binding var speak: Bool
+    @State private var replyVoice = ReplySpeaker.voice ?? ""
+    @State private var speed = ReplySpeaker.speed
+
+    var body: some View {
+        Picker(selection: Binding(get: { Microphones.chosen ?? "" }, set: { voice.choose(mic: $0.isEmpty ? nil : $0) })) {
+            Text("System mic (\(voice.systemMicName))").tag("")
+            Divider()
+            ForEach(voice.mics, id: \.uid) { Text($0.name).tag($0.uid) }
+        } label: {
+            Text("Listen on")
+            Text("If Broski hears nothing while you stream or call, another app may be holding the mic: pick the one you talk into.")
+        }
+        .onAppear { voice.refreshMic() }
+        Toggle("Read replies aloud", isOn: $speak)
+        Picker("Voice", selection: $replyVoice) {
+            Text("System voice").tag("")
+            Divider()
+            ForEach(ReplySpeaker.voices, id: \.id) { Text($0.label).tag($0.id) }
+        }
+        .onChange(of: replyVoice) { ReplySpeaker.voice = $0.isEmpty ? nil : $0 }
+        Picker("Speed", selection: $speed) {
+            ForEach(ReplySpeed.allCases, id: \.self) { Text($0.name).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .onChange(of: speed) { ReplySpeaker.speed = $0 }
+    }
+}
+
 private struct VoiceSettings: View {
     @ObservedObject var app: AppModel
     @StateObject private var check = VoiceCheck()
@@ -335,6 +367,9 @@ private struct VoiceSettings: View {
                 if let problem = app.capture.speechProblem {
                     Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                 }
+            }
+            Section("Microphone and reading aloud") {
+                MicSettings(voice: app.voice, speak: app.binding(\.speakReplies))
             }
             Section("Recognition") {
                 Picker("Language", selection: app.binding(\.locale)) {
@@ -861,7 +896,7 @@ private struct CompanionSettings: View {
             Section("Shortcuts") {
                 LabeledContent("Ask Broski") { ShortcutRecorder(app: app, keyPath: \.askHotkey) }
                 LabeledContent("Help with this") { ShortcutRecorder(app: app, keyPath: \.helpHotkey) }
-                Toggle("Read riff replies aloud", isOn: app.binding(\.speakReplies))
+                Toggle("Read replies aloud", isOn: app.binding(\.speakReplies))
             }
 
             Section {

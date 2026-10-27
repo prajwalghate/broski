@@ -1,4 +1,5 @@
 import AVFoundation
+import BroskiCore
 import CoreAudio
 import Speech
 
@@ -63,6 +64,8 @@ final class SpeechEngine: NSObject {
     private var liveAppended = 0
     private var recording = false
     private var recorded: [AVAudioPCMBuffer] = []
+    private var recordedPeak: Float = 0
+    private var latestLevel: Float = 0
     private var ring = AudioRing(maxSeconds: 4)
 
     override init() {
@@ -147,6 +150,7 @@ final class SpeechEngine: NSObject {
         try ensureAudio()
         lock.lock()
         recorded = replay > 0 ? ring.last(seconds: replay) : []
+        recordedPeak = 0
         recording = true
         lock.unlock()
         if live, recognizer != nil {
@@ -165,6 +169,28 @@ final class SpeechEngine: NSObject {
         let taken = recorded
         recorded = []
         return taken
+    }
+
+    /// The loudest sample since `beginDictation`: none at all means the mic sent nothing (see MicVerdict).
+    var peakSinceDictation: Float {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedPeak
+    }
+
+    /// 0...1 loudness of the latest buffer, for a meter.
+    var level: Float {
+        lock.lock()
+        defer { lock.unlock() }
+        return latestLevel
+    }
+
+    /// The mic name in use, for "Listening on …".
+    private(set) var microphoneName = ""
+
+    /// The mic choice changed: reopen on the new one if the mic is on now, otherwise the next start uses it.
+    func reopenMicrophone() {
+        recoverFromDeviceChange()
     }
 
     /// Hands over what's been recorded so far and keeps recording, so Whisper can work phrase by phrase.
@@ -334,9 +360,12 @@ final class SpeechEngine: NSObject {
             audioRunning = true
             return
         }
+        // A mic you chose runs plain: voice processing works on the system's devices.
+        let chosen = Microphones.chosenDevice
+        let processing = voiceIsolation && !voiceProcessingFailed && chosen == nil
         do {
-            try startMicrophone(voiceProcessing: voiceIsolation && !voiceProcessingFailed)
-        } catch where voiceIsolation && !voiceProcessingFailed {
+            try startMicrophone(voiceProcessing: processing, device: chosen)
+        } catch where processing {
             // Voice processing can't run on some device combinations (for example a Bluetooth
             // speaker with the built-in mic). Remember that and use the plain microphone.
             Log.info("Voice processing couldn't start (\(error.localizedDescription)); using the plain mic")
@@ -345,7 +374,7 @@ final class SpeechEngine: NSObject {
             audioEngine.stop()
             try? audioEngine.inputNode.setVoiceProcessingEnabled(false)
             audioEngine.reset()
-            try startMicrophone(voiceProcessing: false)
+            try startMicrophone(voiceProcessing: false, device: nil)
         }
         maintenanceTimer?.invalidate()
         maintenanceTimer = Timer.scheduledTimer(
@@ -353,9 +382,18 @@ final class SpeechEngine: NSObject {
         )
     }
 
-    private func startMicrophone(voiceProcessing: Bool) throws {
+    private func startMicrophone(voiceProcessing: Bool, device: AudioDeviceID?) throws {
         let input = audioEngine.inputNode
         applyVoiceProcessing(to: input, enabled: voiceProcessing)
+        // Without voice processing the engine keeps whichever device it last had, so say which: the chosen mic, or the
+        // system's (back from a chosen one).
+        if !voiceProcessing, let id = device ?? Microphones.systemDefault, let unit = input.audioUnit {
+            var value = id
+            let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                              &value, UInt32(MemoryLayout<AudioDeviceID>.size))
+            if status != noErr { Log.info("Couldn't switch to the mic \(Microphones.name(of: id) ?? "\(id)") (\(status))") }
+        }
+        microphoneName = (device ?? Microphones.systemDefault).flatMap(Microphones.name(of:)) ?? "the system's mic"
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw EngineError.noMicrophone }
 
@@ -375,7 +413,7 @@ final class SpeechEngine: NSObject {
             throw error
         }
         audioRunning = true
-        Log.info("Microphone on (\(Int(format.sampleRate)) Hz, \(format.channelCount) ch, voice processing \(voiceProcessingActive))")
+        Log.info("Microphone on: \(microphoneName) (\(Int(format.sampleRate)) Hz, \(format.channelCount) ch, voice processing \(voiceProcessingActive))")
     }
 
     /// Apple's voice processing: echo cancellation (removes what this Mac is playing, like a video),
@@ -455,19 +493,26 @@ final class SpeechEngine: NSObject {
 
     /// Audio thread.
     private func consume(_ buffer: AVAudioPCMBuffer) {
-        let copy = AudioRing.copy(buffer)
+        // Everything downstream hears one channel: a mic array or a streaming setup sends several.
+        let copy = buffer.format.channelCount > 1 ? AudioRing.mono(buffer) : AudioRing.copy(buffer)
+        let heard = copy ?? buffer
+        let level = AudioRing.level(of: heard)
+        let peak = AudioRing.peak(of: heard)
         lock.lock()
+        latestLevel = level
         if let copy {
             ring.append(copy)
-            if recording { recorded.append(copy) }
+            if recording {
+                recorded.append(copy)
+                recordedPeak = max(recordedPeak, peak)
+            }
         }
         if let liveRequest {
-            liveRequest.append(buffer)
+            liveRequest.append(heard)
             liveAppended += 1
         }
         lock.unlock()
         if reportLevels {
-            let level = AudioRing.level(of: buffer)
             DispatchQueue.main.async { [weak self] in self?.onLevel?(level) }
         }
     }
@@ -542,6 +587,26 @@ struct AudioRing {
             dst[ch].update(from: src[ch], count: samples)
         }
         return out
+    }
+
+    /// One channel from a mic that sends several (AudioMix.mono: the channels with sound, averaged).
+    static func mono(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let src = buffer.floatChannelData, !buffer.format.isInterleaved,
+              let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false),
+              let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameLength),
+              let dst = out.floatChannelData else { return nil }
+        let frames = Int(buffer.frameLength)
+        let mixed = AudioMix.mono((0..<Int(buffer.format.channelCount)).map { Array(UnsafeBufferPointer(start: src[$0], count: frames)) })
+        mixed.withUnsafeBufferPointer { if let base = $0.baseAddress { dst[0].update(from: base, count: frames) } }
+        out.frameLength = buffer.frameLength
+        return out
+    }
+
+    static func peak(of buffer: AVAudioPCMBuffer) -> Float {
+        guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+        var peak: Float = 0
+        for i in 0..<Int(buffer.frameLength) { peak = max(peak, abs(data[i])) }
+        return peak
     }
 
     /// 0...1 loudness for the level meter.

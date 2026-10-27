@@ -1,4 +1,5 @@
 import AVFoundation
+import BroskiCore
 import Foundation
 import whisper
 
@@ -196,6 +197,16 @@ public final class WhisperTranscriber: @unchecked Sendable {
             return Array(UnsafeBufferPointer(start: data[0], count: Int(buffer.frameLength)))
         }
         guard buffer.frameLength > 0 else { return [] }
+        // macOS's converter turns three or more discrete channels into silence: mix them to one first.
+        if input.channelCount > 2, !input.isInterleaved, input.commonFormat == .pcmFormatFloat32, let data = buffer.floatChannelData,
+           let monoFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: input.sampleRate, channels: 1, interleaved: false),
+           let mono = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: buffer.frameLength), let out = mono.floatChannelData {
+            let frames = Int(buffer.frameLength)
+            let mixed = AudioMix.mono((0..<Int(input.channelCount)).map { Array(UnsafeBufferPointer(start: data[$0], count: frames)) })
+            mixed.withUnsafeBufferPointer { if let base = $0.baseAddress { out[0].update(from: base, count: frames) } }
+            mono.frameLength = buffer.frameLength
+            return try resample(mono)
+        }
         guard let converter = AVAudioConverter(from: input, to: targetFormat) else {
             throw WhisperError.audioConversionFailed("unsupported format \(input)")
         }

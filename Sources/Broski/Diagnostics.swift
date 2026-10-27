@@ -79,6 +79,8 @@ enum Diagnostics {
         if let i = args.firstIndex(of: "--transcribe") { return runTranscribe(Array(args[(i + 1)...]), note: note) }
         if let i = args.firstIndex(of: "--converse"), i + 1 < args.count { return runConverse(args[i + 1], note: note) }
         if args.contains("--reflect") { return runReflect(note: note) }
+        if let i = args.firstIndex(of: "--three-channel"), i + 1 < args.count { return runThreeChannel(args[i + 1], note: note) }
+        if args.contains("--mics") { return runMics(note: note) }
         if args.contains("--first-run") { return runFirstRun(note: note) }
         if args.contains("--riff-mode") { return runRiffMode(note: note) }
         if args.contains("--cache-check") { return runCacheCheck(note: note) }
@@ -874,6 +876,78 @@ enum Diagnostics {
         engine.stop()
         note("[engine] RESULT \(dictated.isEmpty ? "no text" : dictated)\n")
         RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+    }
+
+    /// `--three-channel <audio>`: the clip as a 3-channel mic sends it (your voice on the third channel only, like a
+    /// streaming setup), once straight to transcription as before and once through the engine's tap as now.
+    static func runThreeChannel(_ path: String, note: @escaping (String) -> Void) {
+        let transcription = Transcription()
+        transcription.settings = { ("auto", "en-IN") }
+        var done = false
+        Task { @MainActor in
+            transcription.warmUp()
+            do {
+                let chunks = try loadChunks(URL(fileURLWithPath: path))
+                let spread = chunks.compactMap { spreadToThree($0, voiceOn: 2) }
+                note("[3ch] \(spread.count) buffers, format \(spread.first.map { "\($0.format)" } ?? "none")")
+                let before = try await transcription.transcribe(spread, language: "en", vocabulary: [])
+                note("[3ch] before (straight to transcription): \(before.isEmpty ? "nothing heard" : before)")
+                let engine = SpeechEngine()
+                engine.simulatedInput = true
+                try engine.beginDictation(replay: 0, live: false)
+                spread.forEach(engine.simulate)
+                let peak = engine.peakSinceDictation
+                let after = try await transcription.transcribe(engine.takeRecording(), language: "en", vocabulary: [])
+                note(String(format: "[3ch] after (through the engine): peak %.3f, %@", peak, after.isEmpty ? "nothing heard" : after))
+                // A held mic: three dead channels.
+                try engine.beginDictation(replay: 0, live: false)
+                spread.compactMap { spreadToThree($0, voiceOn: nil) }.forEach(engine.simulate)
+                let dead = engine.peakSinceDictation
+                _ = engine.takeRecording()
+                note("[3ch] dead mic: peak \(dead) → \(MicVerdict.of(peak: dead, heardWords: false).message(mic: "Test Mic") ?? "speech")")
+            } catch {
+                note("[3ch] failed: \(error)")
+            }
+            done = true
+        }
+        let deadline = Date().addingTimeInterval(300)
+        while !done && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        note("done")
+    }
+
+    /// A mono buffer as three channels, the sound on one of them (nil: none).
+    static func spreadToThree(_ buffer: AVAudioPCMBuffer, voiceOn: Int?) -> AVAudioPCMBuffer? {
+        guard let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | 3),
+              let src = buffer.floatChannelData else { return nil }
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, interleaved: false, channelLayout: layout)
+        guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameLength), let dst = out.floatChannelData else { return nil }
+        out.frameLength = buffer.frameLength
+        for ch in 0..<3 {
+            if ch == voiceOn { dst[ch].update(from: src[0], count: Int(buffer.frameLength)) } else { dst[ch].update(repeating: 0, count: Int(buffer.frameLength)) }
+        }
+        return out
+    }
+
+    /// `--mics`: this Mac's mics, which one Broski would use, and two seconds from it (room noise is enough).
+    static func runMics(note: @escaping (String) -> Void) {
+        note("[mics] system: \(Microphones.systemDefaultName ?? "none"), chosen: \(Microphones.chosen ?? "none"), using: \(Microphones.current)")
+        for mic in Microphones.all() { note("[mics]   \(mic.name) (\(mic.uid))") }
+        var done = false
+        Task { @MainActor in
+            let engine = SpeechEngine()
+            engine.voiceIsolation = false
+            note("[mics] system mic: " + (await engine.micCheck(seconds: 2)) + ", heard on \(engine.microphoneName)")
+            if let builtIn = Microphones.all().first(where: { $0.uid.localizedCaseInsensitiveContains("BuiltIn") }) {
+                Microphones.chosen = builtIn.uid
+                engine.reopenMicrophone()
+                note("[mics] chosen \(builtIn.name): " + (await engine.micCheck(seconds: 2)) + ", heard on \(engine.microphoneName)")
+                Microphones.chosen = nil
+            }
+            done = true
+        }
+        let deadline = Date().addingTimeInterval(30)
+        while !done && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        note("done")
     }
 
     /// 0.1-second buffers, plus a second of silence at the end like a pause after speaking.
