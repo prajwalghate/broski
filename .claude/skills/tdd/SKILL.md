@@ -40,7 +40,7 @@ description: Test-first changes in Broski. Use before changing any behavior or f
 
 - **A bug:** a test that reproduces the report and fails before the fix.
 - **A stored format:** a round-trip test, and an upgrade test that reads a line from the previous version (written out literally in the test, the way `EfficiencyTests` keeps an old usage line).
-- **A path that sends text off the device:** a privacy test that local-only projects, private mode and the vault never reach a cloud provider (see the `model-provider` skill).
+- **A path that sends text off the device:** a privacy test that local-only projects and the vault never reach a cloud provider, and that nothing from private mode is written to the Broski folder (see the `model-provider` skill).
 - **A screen:** logic in BroskiCore with unit tests, plus a `--snapshot` render before and after (see `broski-ui`). Interaction (keys, scrolling) goes in `Sources/Broski/ChatCheck.swift`, which drives the real views off screen.
 
 ## Check the test can fail

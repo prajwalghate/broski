@@ -11,7 +11,7 @@ Read `AGENTS.md` first, then the diff, then enough of the surrounding code to ju
 Check, in this order:
 
 1. **Tests first.** Every behavior change and bug fix has a test in `Tests/BroskiCoreTests` that would fail without it. New stored formats have round-trip and upgrade tests. Logic sits in BroskiCore, not in the app targets.
-2. **Privacy.** Every call to a model goes through `ModelGateway`. Nothing from a local-only project, private mode or the vault can reach a cloud provider, and any new send path has a privacy test. Untrusted text (files, pages, trackers) is fenced as data in prompts.
+2. **Privacy.** Every call to a model goes through `ModelGateway`. Nothing from a local-only project or the vault can reach a cloud provider, nothing from private mode is written to the Broski folder unless the person asks (Save, Keep, a "note: …"), and any new send path has a privacy test. Untrusted text (files, pages, trackers) is fenced as data in prompts.
 3. **Any provider.** Nothing assumes Claude: no provider-name checks where a capability check belongs, no hardcoded model where a role belongs.
 4. **Data safety.** Formats carry a version; one writer per file (each device its own); nothing written into a project's repository; nothing created without the person's tap; no destructive file operation on their folder.
 5. **Personal data.** No real names, notes, project data, paths, bundle IDs or keys in code, tests, fixtures or docs.

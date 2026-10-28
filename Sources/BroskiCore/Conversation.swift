@@ -351,6 +351,84 @@ extension SaveCard {
     }
 }
 
+// MARK: Reviews
+
+/// The fast model's look at the last few turns, after each reply and on "save that": a card of what's worth saving,
+/// and the project and topic the conversation is about now. Nothing is saved until you tap Save.
+public struct ConversationReview {
+    /// What the conversation acts on: the card to offer, and the project, topic and new project to take on.
+    public struct Offer: Equatable, Sendable {
+        public var card: SaveCard?
+        public var project: String?
+        public var topic: String?
+        public var newProject: ProjectProposal?
+
+        public init(card: SaveCard? = nil, project: String? = nil, topic: String? = nil, newProject: ProjectProposal? = nil) {
+            self.card = card
+            self.project = project
+            self.topic = topic
+            self.newProject = newProject
+        }
+    }
+
+    /// The conversation as it's kept in the Broski folder.
+    public var stored: [Turn]
+    /// The private conversation, which lives only in memory.
+    public var privateTurns: [Turn]
+    public var isPrivate: Bool
+    /// The project the conversation is about, if any.
+    public var project: String?
+    /// The projects it may file into (never local-only ones).
+    public var projects: [String]
+    /// The project's standing decisions, so a new one can replace an old one.
+    public var decisions: [Decision]
+    public var localOnly: Set<String>
+    public var catalog: ProjectCatalog
+
+    public init(stored: [Turn], privateTurns: [Turn], isPrivate: Bool, project: String?, projects: [String],
+                decisions: [Decision], localOnly: Set<String>, catalog: ProjectCatalog) {
+        self.stored = stored
+        self.privateTurns = privateTurns
+        self.isPrivate = isPrivate
+        self.project = project
+        self.projects = projects
+        self.decisions = decisions
+        self.localOnly = localOnly
+        self.catalog = catalog
+    }
+
+    /// The turns a review reads: the private conversation while you're in private mode, otherwise the stored one.
+    public var turns: [Turn] { isPrivate ? privateTurns : stored }
+
+    /// What the fast model is sent. Private mode is a blank slate, so it isn't told your projects or their decisions.
+    /// Nil when you haven't said anything in the conversation yet.
+    public var request: ModelRequest? {
+        isPrivate ? SaveCard.request(turns: turns, projects: [], decisions: [], project: nil)
+                  : SaveCard.request(turns: turns, projects: projects, decisions: decisions, project: project)
+    }
+
+    /// Sends the review on the fast model. A private review offers only its card, filed in the inbox: a project or
+    /// topic it took on would be kept with later turns, and a new project as a folder.
+    /// Nil when you haven't said anything in the conversation yet.
+    public func run(gateway: ModelGateway) async throws -> Offer? {
+        guard let request else { return nil }
+        let localOnly = LocalOnly.touches(request.messages.map(\.text).joined(), projects: [project], localOnly: localOnly, catalog: catalog)
+        let (reply, _) = try await gateway.send(request, role: .fast, project: isPrivate ? nil : project, localOnly: localOnly, task: "review")
+        if isPrivate { return Offer(card: SaveCard.review(reply.text, catalog: nil)?.card) }
+        guard let review = SaveCard.review(reply.text, catalog: catalog, decisions: decisions) else { return Offer() }
+        var card = review.card
+        if card?.project == nil { card?.project = project }
+        return Offer(card: card, project: review.project, topic: review.topic, newProject: review.newProject)
+    }
+
+    /// Still about the conversation on screen when the answer comes: private mode hasn't gone on or off since, and it's
+    /// the same private conversation (one you let go and started again doesn't get the old one's card).
+    public func isCurrent(isPrivate: Bool, privateTurns: [Turn]) -> Bool {
+        guard isPrivate == self.isPrivate else { return false }
+        return !isPrivate || privateTurns.map(\.id).starts(with: self.privateTurns.map(\.id))
+    }
+}
+
 // MARK: First run
 
 /// Someone new: the conversation opens with a greeting, and for their first three answers Broski gets to know them.
