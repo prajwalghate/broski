@@ -40,12 +40,18 @@ struct FolderCheckTests {
                                            usage: ModelUsage(input: 1)), root: root)
         try Memory.remember("Prefers short answers", root: root, device: "mac")
         _ = try ItemStore(root: root).create(ItemDraft(project: nil, kind: .todo, title: "Buy a domain"))
+        // The change stream: this device's file, and the shared one older versions wrote (with a damaged line).
+        try ChangeStream.append([ChangeEvent(at: Date(), project: "launch", source: "broski", kind: "decided", id: "launch:decision/d2",
+                                             title: "Launch on Friday")], root: root, project: "launch", device: "mac")
+        let old = #"{"at":"2026-10-25T11:30:30+02:00","id":"launch:decision/d1","kind":"decided","project":"launch","source":"broski","title":"Pick a domain"}"#
+        try Data((old + "\n{not json\n").utf8).write(to: root.appendingPathComponent("projects/launch/stream.jsonl"))
 
         let report = FolderCheck.run(root: root)
         #expect(report.ok)
         #expect(report.formats["config"] == FolderCheck.Format(files: 1, read: 1, unreadable: 0))
         #expect(report.formats["conversations"] == FolderCheck.Format(files: 1, read: 2, unreadable: 1))
         #expect(report.formats["usage"]?.read == 1 && report.formats["memory"]?.read == 1 && report.formats["notes"]?.read == 1)
+        #expect(report.formats["change stream"] == FolderCheck.Format(files: 2, read: 2, unreadable: 1))
     }
 
     @Test("a config.json that doesn't parse is a problem; a folder that's new is not")

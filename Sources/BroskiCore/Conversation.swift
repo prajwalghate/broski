@@ -336,7 +336,7 @@ extension SaveCard {
                 if let project = card.project {
                     try? ChangeStream.append([ChangeEvent(at: date, project: project, source: "broski", kind: "decided",
                                                           id: "\(project):decision/\(decision.id)", title: decision.text)],
-                                             root: root, project: project)
+                                             root: root, project: project, device: device)
                 }
             } else {
                 _ = try store.create(ItemDraft(project: card.project, kind: NoteKind(rawValue: entry.kind.rawValue) ?? .note,

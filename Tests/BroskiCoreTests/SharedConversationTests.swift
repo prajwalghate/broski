@@ -47,6 +47,8 @@ struct SharedConversationTests {
         let items = ItemStore(root: root).allItems()
         #expect(items.count == 2 && items.allSatisfy { $0.project == "strado" && $0.kind == .todo && $0.tags == ["conversation"] })
         #expect(ChangeStream.read(root: root, project: "strado").contains { $0.kind == "decided" })
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("projects/strado/stream.iphone.jsonl").path),
+                "the iPhone's decision goes in its own stream file")
     }
 
     @Test("keeping a private conversation copies its files into the project's resources")

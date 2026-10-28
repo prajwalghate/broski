@@ -73,6 +73,7 @@ Everything Broski stores is a plain file in your Broski folder. Newer formats ca
 | `memory/riff-rules.<device>.jsonl` | Riff rules added and dropped | `"v": 1` |
 | `memory/reflection.mac.json` | How far reflection has read | `"v": 1` |
 | `projects/<p>/decisions.<device>.jsonl` | Decisions with dates, each able to replace an older one | `"v": 1` |
+| `projects/<p>/stream.<device>.jsonl` | The change stream: what changed in the trackers, decisions, files kept | `"v": 1`; older lines without it read as 1 |
 | `projects/<p>/resources/` | Files you shared; `links.<device>.jsonl`; saved web pages | `"v": 1`; pages `format: 1` |
 | `usage/<month>.<device>.jsonl` | One line per model call: role, provider, model, task, tokens, cost | `"v": 1` |
 | `packs/<id>.json` | Your own packs | `"v": 1` |
@@ -82,7 +83,7 @@ Everything Broski stores is a plain file in your Broski folder. Newer formats ca
 | `config.json` | Settings, model choices, local-only projects | No version field; every key is optional and falls back to its default |
 | `projects.json` | Every project's name, folders, trackers and earlier names | No version field |
 | `trackers/<id>.broski.json`, `trackers/state/` | Tracker manifests and last-read state | No version field |
-| `projects/<p>/stream.jsonl` | The change stream | No version field |
+| `projects/<p>/stream.jsonl` | The shared change stream Mac 0.11.0 and iPhone 0.7.0 and earlier wrote: still read, never written | No version field |
 
 `config.json` is read with care: one bad value falls back on its own, a malformed local-only list fails closed, and a file that won't parse is kept as `config.broken.json` while every project counts as local only.
 
@@ -95,7 +96,7 @@ Files with one owner:
 - `config.json`, `PROJECT.md`, `automations.json`, reflection's state and the automations cursor are written by the Mac. The iPhone only reads them.
 - A note is one markdown file either device may edit. Broski re-reads it from disk before changing it, so the other device's edit survives.
 
-One exception today: a project's change stream (`projects/<p>/stream.jsonl`) is a single file that the Mac's tracker reads and a decision saved on either device both append to.
+The change stream was the last exception: up to Mac 0.11.0 and iPhone 0.7.0 it was one shared `projects/<p>/stream.jsonl`. Now each device appends to `stream.<device>.jsonl`, and the old file is still read with the rest, so nothing in it is lost.
 
 ## Sync through iCloud
 
