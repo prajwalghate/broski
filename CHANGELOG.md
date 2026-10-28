@@ -2,6 +2,12 @@
 
 All notable changes to Broski are in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Mac app and the iPhone app have their own version numbers; each entry names the ones that changed. The iPhone stayed at 0.6.0 while Mac 0.9.1 to 0.9.6 shipped, so iPhone changes in those releases are listed under the Mac version.
 
+## Mac 0.11.1 - 2026-10-28
+
+### Security
+
+- The Whisper voice model downloads from one pinned version on Hugging Face and is checked against its size and SHA-256 before it's used. A download that doesn't match is deleted, and Broski says so. A model already on your Mac counts as downloaded only at the expected size.
+
 ## Mac 0.11.0, iPhone 0.7.0 - 2026-10-28
 
 ### Added
