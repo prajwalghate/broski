@@ -91,13 +91,13 @@ Reads your Broski folder (the one the app uses) the way the app does, without wr
 scripts/ci.sh
 ```
 
-The secret scan, the guardrail tests, the build, every unit test, the self-tests and the chat check. Add `--ios` to build the iPhone app too (unsigned):
+The secret scan, the guardrail tests, the website (the builder's tests, then every page, link and structured data), the build, every unit test, the self-tests and the chat check. Add `--ios` to build the iPhone app too (unsigned):
 
 ```bash
 scripts/ci.sh --ios
 ```
 
-A pass is recorded as green. On GitHub, CI runs `scripts/ci.sh --ios` on every push to `main` and every pull request, on clean macOS 14, 15 and 26 runners, so a change that only works on one macOS version is caught.
+A pass is recorded as green. On GitHub, CI runs `scripts/ci.sh --ios` on every push to `main` and every pull request, on clean macOS 14, 15 and 26 runners, so a change that only works on one macOS version is caught. A change to only the docs, the website or other markdown skips CI; the Pages workflow runs the website's tests and build for it instead, on pull requests too.
 
 ## The green-run record
 

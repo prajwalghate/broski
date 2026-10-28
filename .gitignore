@@ -18,3 +18,6 @@ iOS/Local.env
 launch/
 
 .DS_Store
+
+# Python bytecode from the site builder
+__pycache__/

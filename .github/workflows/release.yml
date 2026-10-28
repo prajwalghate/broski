@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  actions: write # to rebuild the website, which names the newest release
 
 jobs:
   release:
@@ -45,3 +46,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" Broski-*.zip Broski-*.zip.sha256 --title "Broski $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+
+      # The website names the newest release (its version and download), so rebuild it now. Not a failure of the
+      # release if Pages isn't on yet.
+      - name: Rebuild the website
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main || echo "::warning::Couldn't start the Pages workflow; the site still names the previous release."

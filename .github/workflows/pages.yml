@@ -1,12 +1,27 @@
 name: Pages
 
-# Publishes site/ to GitHub Pages. The site's source never names the repository: links are written as
-# __REPO__ and __SITE__, filled in here, so a fork's site points at the fork.
+# Publishes the website to GitHub Pages: site/ plus a page for each guide in docs/ and the changelog, with what
+# search engines and answer engines read (scripts/site/build.py). The site's source never names the repository:
+# its address and the site's come from here, so a fork's site points at the fork.
 on:
   push:
     branches: [main]
     paths:
       - "site/**"
+      - "docs/**"
+      - "CHANGELOG.md"
+      - "Resources/Info.plist"
+      - "iOS/project.yml"
+      - "scripts/site/**"
+      - ".github/workflows/pages.yml"
+  # A pull request gets the same tests and build, and nothing is published (CI skips changes to only the
+  # docs and the site, so this is their check).
+  pull_request:
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "CHANGELOG.md"
+      - "scripts/site/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -21,28 +36,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Test the site builder
+        run: python3 scripts/site/test_build.py
+      - name: Build the site (every page, link and structured data)
+        env:
+          REPO_URL: https://github.com/${{ github.repository }}
+        run: python3 scripts/site/build.py --out _site --site "https://example.github.io/broski" --repo "$REPO_URL"
+
   build:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # each page's "updated" date and the sitemap come from git history
 
-      - name: Configure Pages
+      - name: Configure Pages # fails until Pages is on: Settings › Pages › Source: GitHub Actions
         id: pages
         uses: actions/configure-pages@v6
 
-      - name: Fill in the repository and site links
+      - name: Test the site builder
+        run: python3 scripts/site/test_build.py
+
+      - name: Build the site
         env:
-          REPO_URL: https://github.com/${{ github.repository }}
           SITE_URL: ${{ steps.pages.outputs.base_url }}
-        run: |
-          rm -rf _site
-          cp -R site _site
-          find _site -name '*.html' -exec sed -i -e "s#__REPO__#${REPO_URL}#g" -e "s#__SITE__#${SITE_URL%/}#g" {} +
-          if grep -rl --include='*.html' -e '__REPO__' -e '__SITE__' _site; then
-            echo "Placeholders are left in the files above." >&2
-            exit 1
-          fi
+          REPO_URL: https://github.com/${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          # Optional ownership checks for Google Search Console and Bing Webmaster Tools: set these as repository
+          # variables (Settings › Secrets and variables › Actions › Variables) to the code each one gives you.
+          GOOGLE_SITE_VERIFICATION: ${{ vars.GOOGLE_SITE_VERIFICATION }}
+          BING_SITE_VERIFICATION: ${{ vars.BING_SITE_VERIFICATION }}
+        run: python3 scripts/site/build.py --out _site --site "$SITE_URL" --repo "$REPO_URL" --owner "$OWNER"
 
       - uses: actions/upload-pages-artifact@v5
         with:
@@ -52,6 +88,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

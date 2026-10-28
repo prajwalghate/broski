@@ -1,0 +1,13 @@
+{
+  "name": "Broski",
+  "short_name": "Broski",
+  "description": "An open-source AI companion for your projects, on Mac and iPhone.",
+  "start_url": "./",
+  "display": "browser",
+  "background_color": "#FFFDF8",
+  "theme_color": "#7D4DFF",
+  "icons": [
+    { "src": "assets/icon-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "assets/icon-1024.png", "sizes": "1024x1024", "type": "image/png" }
+  ]
+}

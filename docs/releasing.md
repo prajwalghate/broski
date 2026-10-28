@@ -16,7 +16,7 @@ For maintainers. The installed app is production: people's notes, conversations 
 scripts/ci.sh --ios
 ```
 
-The secret scan, the guardrail tests, the build, every unit test, the self-tests, the chat check and the iPhone build. Nothing ships on red. A pass records the code as green. [Testing](testing.md) explains each step.
+The secret scan, the guardrail tests, the website, the build, every unit test, the self-tests, the chat check and the iPhone build. Nothing ships on red. A pass records the code as green. [Testing](testing.md) explains each step.
 
 ## 3. Build and install on your Mac
 
@@ -92,7 +92,17 @@ Runs the self-tests, builds, and writes `dist/Broski-<version>.dmg` and `.zip`, 
 
 ## The website
 
-`site/` is the website. `.github/workflows/pages.yml` publishes it to GitHub Pages whenever `site/` changes on `main`, filling in the repository and site links at publish time, so the site's source never names the repository.
+`site/` is the home page. `scripts/site/build.py` turns it, each guide in `docs/` and the changelog into the website, with what search engines and answer engines read: structured data on every page, `sitemap.xml`, `robots.txt`, `llms.txt`, `llms-full.txt` and a markdown copy of each guide. A broken link or anchor, a page without a description, or a guide missing from `DOCS` in the builder fails the build. To see it on your Mac:
+
+```bash
+scripts/site.sh --serve
+```
+
+`.github/workflows/pages.yml` publishes it to GitHub Pages whenever the site, the guides, the changelog or the version changes on `main`. It fills in the repository's and the site's addresses then, so the site's source never names the repository and a fork's site points at the fork.
+
+The first time, on a new repository or a fork, run `scripts/github-setup.sh` with the GitHub CLI signed in. It turns on Pages built by GitHub Actions and fills in the repository's About box: description, website and topics. Then upload `site/assets/social-preview.png` in Settings › General › Social preview.
+
+For Google Search Console or Bing Webmaster Tools, choose the HTML tag check and put its code in a repository variable (Settings › Secrets and variables › Actions › Variables): `GOOGLE_SITE_VERIFICATION` or `BING_SITE_VERIFICATION`. The next build adds the tag to the home page. Then submit `sitemap.xml`: a site at `owner.github.io/repo` can't serve the domain's own `robots.txt`, so the submitted sitemap is how search engines find every page.
 
 ## Security fixes
 

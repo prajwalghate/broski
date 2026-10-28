@@ -6,18 +6,21 @@
   <!-- Nothing on this page comes from another site: no fonts, scripts, trackers or embeds. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="no-referrer">
-  <title>Broski: a companion you talk to about your projects</title>
-  <meta name="description" content="A companion you talk to about your projects. It remembers, thinks with you, and saves only when you tap Save. Free and open source, for Mac and iPhone.">
+  <title>Broski: an open-source AI companion for Mac and iPhone</title>
+  <meta name="description" content="Talk or type to Broski about your projects. It remembers, thinks with you, and saves notes as plain files you own. Works with Claude, OpenAI, Gemini or local models.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#FFFDF8" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#141417" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="__SITE__/">
   <link rel="icon" type="image/png" sizes="64x64" href="assets/icon-64.png">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="alternate" type="text/plain" href="llms.txt" title="Broski for language models">
   <link rel="stylesheet" href="styles.css">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Broski">
-  <meta property="og:title" content="Broski: a companion you talk to about your projects">
+  <meta property="og:title" content="Broski: an open-source AI companion for Mac and iPhone">
   <meta property="og:description" content="It remembers what you've told it, thinks with you, and saves only when you tap Save, as plain files you own. Free and open source, for Mac and iPhone.">
   <meta property="og:url" content="__SITE__/">
   <meta property="og:image" content="__SITE__/assets/og.png">
@@ -71,6 +74,7 @@
         <li><a href="#privacy">Privacy</a></li>
         <li><a href="#developers">Developers</a></li>
         <li><a href="#faq">FAQ</a></li>
+        <li><a href="docs/">Docs</a></li>
       </ul>
     </nav>
     <div class="nav-cta">
@@ -99,7 +103,7 @@
           </a>
           <a class="btn btn-secondary" href="__REPO__">View on GitHub</a>
         </div>
-        <p class="meta"><span>Free and open source</span> <span aria-hidden="true">·</span> <span>macOS 14 or later on Apple silicon</span> <span aria-hidden="true">·</span> <span>iPhone app included</span></p>
+        <p class="meta"><span>Free and open source</span> <span aria-hidden="true">·</span> <span>Version __VERSION__</span> <span aria-hidden="true">·</span> <span>macOS 14 or later on Apple silicon</span> <span aria-hidden="true">·</span> <span>iPhone app included</span></p>
       </div>
 
       <div class="hero-shot">
@@ -260,7 +264,7 @@
           <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>Projects marked local only use only models on your device.</span></li>
           <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>See this month's spend by model, and set a daily limit.</span></li>
         </ul>
-        <a class="more" href="__REPO__/blob/main/docs/models.md">How to set up a model<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+        <a class="more" href="docs/models/">How to set up a model<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
       </div>
       <div class="split-shot" data-reveal>
         <div class="stage">
@@ -344,7 +348,7 @@
           <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>
           Download for Mac
         </a>
-        <a class="more" href="__REPO__/blob/main/BETA.md">Read the install notes<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+        <a class="more" href="docs/getting-started/#install-from-a-release">Read the install guide<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
       </div>
     </div>
   </section>
@@ -403,6 +407,18 @@
         <h2 id="faq-title">Questions</h2>
       </div>
       <div class="faq" data-reveal>
+        <details id="faq-what">
+          <summary>What is Broski?</summary>
+          <div class="answer">
+            <p>Broski is a free, open-source companion app for Mac and iPhone that you talk to about your projects. Press a shortcut, talk or type, and it remembers what you've told it, thinks things through with you, and saves decisions, todos and notes as plain files you own, only when you tap Save.</p>
+          </div>
+        </details>
+        <details id="faq-models">
+          <summary>Which AI models does Broski work with?</summary>
+          <div class="answer">
+            <p>Any of them. Use Claude, OpenAI, Google Gemini, OpenRouter, Groq, Mistral or DeepSeek with your own key, any OpenAI-compatible server, or a model on your Mac with Ollama, LM Studio or Apple's on-device model. You pick a model for each kind of work (fast, everyday, deep) and can mix providers. <a href="docs/models/">Choosing your AI</a> shows how.</p>
+          </div>
+        </details>
         <details>
           <summary>Is Broski free?</summary>
           <div class="answer">
@@ -415,6 +431,12 @@
             <p>Yes, with a local model (Ollama, LM Studio or Apple's on-device model) and on-device voice (Bark or Whisper). Cloud models and reading links need a connection.</p>
           </div>
         </details>
+        <details id="faq-privacy">
+          <summary>Does Broski send my voice or notes to the cloud?</summary>
+          <div class="answer">
+            <p>Only what you choose. Broski never sends audio anywhere itself: Bark and Whisper turn speech into text on your Mac, and Apple's recognizer runs on the device when your language supports it (otherwise Apple's speech service is used). Text goes to the model you choose, after keys and tokens in it are masked, and to webhooks you add. Projects you mark local only use only models on your device, and there's no Broski account or server. <a href="docs/privacy/">Privacy</a> covers exactly what's sent.</p>
+          </div>
+        </details>
         <details>
           <summary>Where are my notes?</summary>
           <div class="answer">
@@ -424,7 +446,13 @@
         <details>
           <summary>Is there an iPhone app?</summary>
           <div class="answer">
-            <p>Yes, with the same conversation, notes and riffs. For now you build it from source and install it with your own Apple ID. <a href="__REPO__/blob/main/docs/iphone.md">The iPhone guide</a> walks you through it.</p>
+            <p>Yes, with the same conversation, notes and riffs. For now you build it from source and install it with your own Apple ID. <a href="docs/iphone/">The iPhone guide</a> walks you through it.</p>
+          </div>
+        </details>
+        <details id="faq-mcp">
+          <summary>Can Claude Code read my Broski notes?</summary>
+          <div class="answer">
+            <p>Yes. Broski includes an MCP server, so Claude Code, Claude Desktop or any other MCP client can read your notes, project pages, decisions and trackers. It hides local-only projects, never reads the private vault, and writes only to trackers Broski keeps. Settings › Connections connects Claude Code in one click; <a href="docs/mcp/">Claude Code and MCP</a> has the details.</p>
           </div>
         </details>
         <details id="faq-warning">
@@ -480,7 +508,8 @@
         <ul>
           <li><a href="__REPO__/releases/latest">Download</a></li>
           <li><a href="__REPO__/releases">Releases</a></li>
-          <li><a href="__REPO__/tree/main/docs">Docs</a></li>
+          <li><a href="docs/">Docs</a></li>
+          <li><a href="changelog/">Changelog</a></li>
         </ul>
       </div>
       <div>

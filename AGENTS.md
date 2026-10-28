@@ -11,18 +11,19 @@ Broski is a companion you talk to about your projects: a Mac menu-bar app, an iP
 | `iOS/` | The iPhone app (XcodeGen, `iOS/project.yml`). Thin, like the Mac app. |
 | `Tests/BroskiCoreTests` | Unit tests (Swift Testing). New code is written test-first here. |
 | `Sources/BroskiSelfTest` | Older assertion checks (`swift run BroskiSelfTest`); they move into the unit tests as modules change. |
-| `scripts/` | `test.sh`, `ci.sh`, `build-app.sh`, `install-mac.sh`, `rollback-mac.sh`, `phone.sh`, `package.sh`; `scripts/agent/` holds the guardrails. |
-| `site/` | The website (GitHub Pages). `docs/` holds the guides it links to. |
+| `scripts/` | `test.sh`, `ci.sh`, `build-app.sh`, `install-mac.sh`, `rollback-mac.sh`, `phone.sh`, `package.sh`, `site.sh`, `github-setup.sh`; `scripts/agent/` holds the guardrails, `scripts/site/` the website's builder. |
+| `site/` | The website's home page (GitHub Pages). `scripts/site/build.py` adds a page for each guide in `docs/`, the changelog, structured data, the sitemap and `llms.txt`. |
 
 ## Commands
 
 ```bash
 scripts/test.sh ModelsTests GatewayTests   # the suites you're working on (type names): the red-green loop
 scripts/test.sh                            # every unit test; a pass is recorded as green
-scripts/ci.sh                              # what CI runs: secret scan, guardrail tests, build, tests, self-tests, chat check
+scripts/ci.sh                              # what CI runs: secret scan, guardrail tests, website, build, tests, self-tests, chat check
 scripts/ci.sh --ios                        # the same plus the iPhone app (unsigned)
 .build/debug/Broski --snapshot /tmp/shots  # every screen as PNGs, light and dark, with sample data
 .build/debug/Broski --chat-check /tmp/r    # the real chat views off screen: keys, scrolling (exit 1 on failure)
+scripts/site.sh --serve                    # the website as GitHub Pages builds it, at localhost:8765
 scripts/install-mac.sh                     # install the built app safely (see Releasing)
 ```
 

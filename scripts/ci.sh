@@ -1,5 +1,5 @@
 #!/bin/bash
-# Everything CI runs, on your Mac: secret scan, guardrail tests, build, unit tests, self-tests, the chat check.
+# Everything CI runs, on your Mac: secret scan, guardrail tests, the website, build, unit tests, self-tests, the chat check.
 #   scripts/ci.sh          the Swift package (Mac app, BroskiCore, tools)
 #   scripts/ci.sh --ios    also builds the iPhone app, unsigned
 # A pass is recorded as a green run of the code as it is now (scripts/agent/lib.sh).
@@ -21,6 +21,9 @@ scripts/check-secrets.sh
 
 step "Guardrails (agent and git hooks)"
 scripts/agent/test-hooks.sh
+
+step "Website (the builder's tests, then every page, link and structured data)"
+scripts/site.sh
 
 step "Build"
 swift build
