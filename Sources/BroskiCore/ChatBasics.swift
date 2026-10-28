@@ -39,6 +39,41 @@ public enum ChatScroll {
         endY <= viewport + tolerance
     }
 
+    /// What the view does once a layout lands.
+    public enum Landing: Equatable, Sendable {
+        /// At the latest, or on its way there.
+        case following
+        /// Following, but the latest is out of view and nothing scrolled: scroll to it.
+        case catchUp
+        /// You scrolled up to read: stay put, show "jump to latest".
+        case reading
+    }
+
+    /// Where the conversation's top was when the view last saw it scroll. Only scrolling moves the top: a reply laid
+    /// out below or a shorter window doesn't, so they never count as you scrolling away, even on a slow Mac where that
+    /// layout lands before the view follows it.
+    public struct Anchor: Sendable {
+        private var top: Double?
+
+        public init() {}
+
+        /// `ownScroll`: the view is scrolling itself to the latest, so moving on the way there isn't you.
+        public mutating func landed(top: Double, end: Double, viewport: Double, pinned: Bool, ownScroll: Bool = false) -> Landing {
+            let atBottom = ChatScroll.atBottom(endY: end, viewport: viewport)
+            if ownScroll && !atBottom {
+                self.top = top
+                return pinned ? .following : .reading
+            }
+            // Measured from where it last scrolled, so a slow scroll's half-point steps add up.
+            if let last = self.top, abs(top - last) < 1 {
+                if atBottom { return .following }
+                return pinned ? .catchUp : .reading
+            }
+            self.top = top
+            return atBottom ? .following : .reading
+        }
+    }
+
     /// Scroll to the latest: always for what you said and a new view; for new content only if you were already there
     /// (scrolled up to read, you get a "jump to latest" button instead).
     public static func follows(_ change: Change, pinned: Bool) -> Bool {

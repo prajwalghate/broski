@@ -39,6 +39,58 @@ struct ChatBasicsTests {
         #expect(ChatScroll.atBottom(endY: 120, viewport: 500))
     }
 
+    /// A view following at the latest: the conversation's top at -1500 in a 500-point window, its end at the bottom.
+    private func atTheLatest() -> ChatScroll.Anchor {
+        var anchor = ChatScroll.Anchor()
+        _ = anchor.landed(top: -1500, end: 500, viewport: 500, pinned: true)
+        return anchor
+    }
+
+    // On a slow Mac the new reply can be laid out (its end below the window) before the view gets to follow it.
+    @Test("a reply laid out below you before the view follows it is still followed")
+    func contentGrowingKeepsFollowing() {
+        var anchor = atTheLatest()
+        // A 140-point reply lands below; nobody scrolled.
+        #expect(anchor.landed(top: -1500, end: 640, viewport: 500, pinned: true) == .catchUp)
+        // The box grew and the window got shorter; still nobody scrolled.
+        anchor = atTheLatest()
+        #expect(anchor.landed(top: -1500, end: 560, viewport: 440, pinned: true) == .catchUp)
+        // Scrolled up to read: replies arriving below leave you there.
+        anchor = atTheLatest()
+        _ = anchor.landed(top: -400, end: 1600, viewport: 500, pinned: true)
+        #expect(anchor.landed(top: -400, end: 1800, viewport: 500, pinned: false) == .reading)
+    }
+
+    @Test("scrolling up stops following; scrolling back to the end follows again")
+    func scrollingDecides() {
+        var anchor = atTheLatest()
+        #expect(anchor.landed(top: -1000, end: 1000, viewport: 500, pinned: true) == .reading)
+        #expect(anchor.landed(top: -1500, end: 500, viewport: 500, pinned: false) == .following)
+        // Shorter than the window: always at the bottom.
+        var short = ChatScroll.Anchor()
+        #expect(short.landed(top: 0, end: 120, viewport: 500, pinned: false) == .following)
+    }
+
+    @Test("a slow scroll up, half a point at a time, stops following")
+    func slowScrollUp() {
+        var anchor = atTheLatest()
+        var top = -1500.0, landing = ChatScroll.Landing.following
+        for _ in 0..<400 {
+            top += 0.5
+            landing = anchor.landed(top: top, end: top + 2000, viewport: 500, pinned: landing != .reading)
+        }
+        #expect(landing == .reading)
+    }
+
+    @Test("the view's own scroll to the latest isn't you scrolling up")
+    func ownScroll() {
+        var anchor = ChatScroll.Anchor()
+        _ = anchor.landed(top: 16, end: 2500, viewport: 500, pinned: true)
+        // On its way down from the top, and slower than the follow window on a starved Mac.
+        #expect(anchor.landed(top: -900, end: 1600, viewport: 500, pinned: true, ownScroll: true) == .following)
+        #expect(anchor.landed(top: -1984, end: 516, viewport: 500, pinned: true, ownScroll: false) == .following)
+    }
+
     @Test("what you say and a new view always scroll to the latest; replies only if you were already there")
     func following() {
         #expect(ChatScroll.follows(.yourMessage, pinned: false))

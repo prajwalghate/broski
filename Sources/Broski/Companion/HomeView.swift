@@ -719,8 +719,10 @@ struct HomeView: View {
     @State private var dropping = false
     /// The conversation's end is in view: new replies scroll into view. Scrolled up to read, they don't.
     @State private var pinned = true
-    /// New content pushes the end out of view for a moment before the scroll catches up; that isn't you scrolling up.
+    /// The view's own scroll to the latest moves the conversation for a moment; that isn't you scrolling up.
     @State private var followUntil = Date.distantPast
+    /// Where the conversation's top was when it last scrolled (a box: updating it doesn't redraw the view).
+    @State private var anchor = ConversationAnchor()
     @State private var showingRules = false
     @State private var newRule = ""
 
@@ -958,16 +960,21 @@ struct HomeView: View {
                     }
                     Color.clear.frame(height: 1).id("end")
                         .background(GeometryReader { marker in
-                            Color.clear.preference(key: ConversationEnd.self, value: marker.frame(in: .named("conversation")).maxY)
+                            let end = marker.frame(in: .named("conversation")).maxY
+                            // Where the conversation starts, in the same coordinates: only scrolling moves it.
+                            let top = end - marker.frame(in: .named("conversationContent")).maxY
+                            Color.clear.preference(key: ConversationEdges.self, value: ConversationEdges(top: top, end: end))
                         })
                 }
+                .coordinateSpace(name: "conversationContent")
                 .padding(16)
             }
             .coordinateSpace(name: "conversation")
-            .onPreferenceChange(ConversationEnd.self) { end in
-                let atBottom = ChatScroll.atBottom(endY: Double(end), viewport: Double(outer.size.height))
-                if !atBottom, Date() < followUntil { return }
-                if pinned != atBottom { pinned = atBottom }
+            .onPreferenceChange(ConversationEdges.self) { edges in
+                let landing = anchor.value.landed(top: Double(edges.top), end: Double(edges.end), viewport: Double(outer.size.height),
+                                                  pinned: pinned, ownScroll: Date() < followUntil)
+                if pinned != (landing != .reading) { pinned = landing != .reading }
+                if landing == .catchUp { follow(.newContent, proxy, animated: true) }
             }
             .overlay(alignment: .bottomTrailing) {
                 if !pinned {
@@ -1346,8 +1353,14 @@ struct HomeView: View {
     }
 }
 
-/// Where the conversation's last line is, in the visible area's coordinates.
-private struct ConversationEnd: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+/// Where the conversation's first and last lines are, in the visible area's coordinates.
+private struct ConversationEdges: PreferenceKey, Equatable {
+    var top: CGFloat = 0
+    var end: CGFloat = 0
+    static let defaultValue = ConversationEdges()
+    static func reduce(value: inout ConversationEdges, nextValue: () -> ConversationEdges) { value = nextValue() }
+}
+
+private final class ConversationAnchor {
+    var value = ChatScroll.Anchor()
 }

@@ -39,7 +39,8 @@ enum ChatCheck {
         text.insertText("second line", replacementRange: text.selectedRange())
         settle()
         check(box.text == "first line\nsecond line" && box.sends == 0, "Shift-Return starts a new line instead of sending")
-        check((scroll?.frame.height ?? 0) > oneLine + 8, "the box grows with a second line (\(Int(oneLine)) → \(Int(scroll?.frame.height ?? 0)) points)")
+        let grew = settle(until: { (scroll?.frame.height ?? 0) > oneLine + 8 })
+        check(grew, "the box grows with a second line (\(Int(oneLine)) → \(Int(scroll?.frame.height ?? 0)) points)")
 
         text.keyDown(with: key(36, "\r", [.option]))
         check(box.text.hasSuffix("\n") && box.sends == 0, "Option-Return starts a new line too")
@@ -47,11 +48,11 @@ enum ChatCheck {
         text.keyDown(with: key(36, "\r", []))
         settle()
         check(box.sends == 1, "Return sends")
-        check(text.string.isEmpty && box.text.isEmpty, "the box is empty after sending")
+        check(settle(until: { text.string.isEmpty && box.text.isEmpty }), "the box is empty after sending")
 
         text.keyDown(with: key(126, String(UnicodeScalar(NSUpArrowFunctionKey)!), [.function, .numericPad]))
-        settle()
-        check(text.string == Harness.lastSaid && box.text == Harness.lastSaid, "Up in an empty box brings back your last message")
+        let recalled = settle(until: { text.string == Harness.lastSaid && box.text == Harness.lastSaid })
+        check(recalled, "Up in an empty box brings back your last message")
         text.keyDown(with: key(126, String(UnicodeScalar(NSUpArrowFunctionKey)!), [.function, .numericPad]))
         check(text.string == Harness.lastSaid, "Up with text in the box only moves the cursor")
 
@@ -63,8 +64,7 @@ enum ChatCheck {
 
         text.insertText("draft", replacementRange: text.selectedRange())
         box.text = "set from outside"
-        settle()
-        check(text.string == "set from outside", "text set from outside (a chip, dictation) shows in the box")
+        check(settle(until: { text.string == "set from outside" }), "text set from outside (a chip, dictation) shows in the box")
 
         // Pasting: a file or an image is attached; text is text.
         let board = NSPasteboard(name: NSPasteboard.Name("broski-chat-check-\(UUID().uuidString)"))
@@ -110,39 +110,49 @@ enum ChatCheck {
         settle(1.0)
         let scrolls = all(NSScrollView.self, in: window.contentView).filter { !($0.documentView is ComposerTextView) }
         guard let chat = scrolls.max(by: { $0.frame.height < $1.frame.height }) else { return check(false, "the conversation is on screen") }
+        func distance() -> String { "\(Int(fromBottom(chat))) points from the end" }
+        /// From rest (past the view's own last scroll, as when a reply comes while you look), makes `change`, waits until
+        /// the conversation's layout shows it, then gives the view time to scroll to the latest: a slow Mac (a CI runner)
+        /// gets the time it needs, a fast one doesn't wait.
+        func showsLatest(_ what: String, after change: () -> Void) {
+            rest(chat)
+            let before = sizes(chat)
+            change()
+            let ok = settle(until: { sizes(chat) != before }) && settle(until: { fromBottom(chat) < 30 })
+            rest(chat, quiet: 0.3)
+            check(ok && fromBottom(chat) < 30, "\(what) (\(distance()))")
+        }
 
-        check(fromBottom(chat) < 30, "opens at the latest message (\(Int(fromBottom(chat))) points from the end)")
+        check(settle(until: { fromBottom(chat) < 30 }), "opens at the latest message (\(distance()))")
 
+        rest(chat)
         scrollToTop(chat)
         settle()
         let reading = fromBottom(chat)
         check(reading > 300, "you can scroll up to read (\(Int(reading)) points from the end)")
 
+        let before = sizes(chat)
         home.add(Turn(device: "mac", speaker: .broski, text: "A reply that arrives while you're reading older messages."))
+        settle(until: { sizes(chat) != before })
         settle()
-        check(abs(fromBottom(chat) - reading) < 200 && fromBottom(chat) > 300, "a new reply doesn't pull you away from what you're reading")
+        check(abs(fromBottom(chat) - reading) < 200 && fromBottom(chat) > 300,
+              "a new reply doesn't pull you away from what you're reading (\(distance()))")
 
-        home.add(Turn(device: "mac", speaker: .you, text: "Something you said"))
-        settle()
-        check(fromBottom(chat) < 30, "what you say scrolls into view, even from up there")
+        showsLatest("what you say scrolls into view, even from up there") {
+            home.add(Turn(device: "mac", speaker: .you, text: "Something you said"))
+        }
+        showsLatest("a reply follows you at the bottom") {
+            home.add(Turn(device: "mac", speaker: .broski, text: (0..<8).map { "Line \($0) of a long reply." }.joined(separator: "\n")))
+        }
+        showsLatest("a problem at the end is scrolled into view") { home.problem = "Couldn't reach the model." }
+        showsLatest("the box growing keeps the latest in view") { home.draft = "one\ntwo\nthree\nfour" }
 
-        home.add(Turn(device: "mac", speaker: .broski, text: (0..<8).map { "Line \($0) of a long reply." }.joined(separator: "\n")))
-        settle()
-        check(fromBottom(chat) < 30, "a reply follows you at the bottom")
-
-        home.problem = "Couldn't reach the model."
-        settle()
-        check(fromBottom(chat) < 30, "a problem at the end is scrolled into view")
-
-        home.draft = "one\ntwo\nthree\nfour"
-        settle()
-        check(fromBottom(chat) < 30, "the box growing keeps the latest in view")
-
+        rest(chat)
         scrollToTop(chat)
         settle()
         home.objectWillChange.send()
         settle()
-        check(fromBottom(chat) > 300, "staying scrolled up stays put")
+        check(fromBottom(chat) > 300, "staying scrolled up stays put (\(distance()))")
         home.draft = ""
     }
 
@@ -160,6 +170,39 @@ enum ChatCheck {
     static func settle(_ seconds: Double = 0.5) {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    }
+
+    /// Runs the app until `done()` holds, for up to `timeout` seconds. Returns whether it held.
+    @discardableResult
+    static func settle(until done: () -> Bool, timeout: Double = 5) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while !done() {
+            guard Date() < end else { return false }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        return true
+    }
+
+    /// Waits until the conversation has stopped moving for `quiet` seconds. The default is longer than the view's 0.8 s
+    /// window after it scrolls itself to the latest, so scrolling up next counts as you reading, not as its own scroll.
+    private static func rest(_ scroll: NSScrollView, quiet: Double = 1, timeout: Double = 5) {
+        let end = Date().addingTimeInterval(timeout)
+        var last = fromBottom(scroll), still = Date()
+        while Date() < end {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            let now = fromBottom(scroll)
+            if abs(now - last) > 0.5 {
+                last = now
+                still = Date()
+            } else if Date().timeIntervalSince(still) >= quiet {
+                return
+            }
+        }
+    }
+
+    /// The conversation's length and the visible part's height: either changes once new content or a resize is laid out.
+    private static func sizes(_ scroll: NSScrollView) -> [CGFloat] {
+        [scroll.documentView?.frame.height ?? 0, scroll.contentView.bounds.height]
     }
 
     private static func key(_ code: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags) -> NSEvent {

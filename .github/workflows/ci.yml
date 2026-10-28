@@ -60,7 +60,12 @@ jobs:
       - name: The chat, off screen (keys, scrolling, the message box)
         run: |
           report="$RUNNER_TEMP/chat.txt"
-          if ! Broski.app/Contents/MacOS/Broski --chat-check "$report"; then cat "$report"; exit 1; fi
+          if ! Broski.app/Contents/MacOS/Broski --chat-check "$report"; then
+            cat "$report"
+            # Each failed check as an annotation too: readable on the run's page without signing in.
+            sed -n 's/^FAIL  /::error title=Chat check::/p' "$report"
+            exit 1
+          fi
           tail -1 "$report"
 
       - name: A first run's empty Broski folder reads cleanly
