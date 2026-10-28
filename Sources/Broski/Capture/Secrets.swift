@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Secrets (the Claude API key, a Slack webhook), stored in a file only your user can read:
+/// Secrets (model providers' API keys, a Slack webhook), stored in a file only your user can read:
 /// ~/Library/Application Support/Broski/secrets.json (mode 600), cached in memory after the first read.
 ///
 /// Not the keychain: ad-hoc-signed beta builds get a new code signature on every build, and the
@@ -9,6 +9,11 @@ import Security
 enum Secrets {
     static let claudeKey = "anthropic-api-key"
     static let slackWebhook = "slack-webhook"
+
+    /// Where a model provider's key is saved: Claude's under its first name, every other provider's as "model.<id>".
+    static func keyName(forProvider id: String) -> String { id == "claude" ? claudeKey : "model.\(id)" }
+
+    static func key(forProvider id: String) -> String? { get(keyName(forProvider: id)) }
 
     private static var cache: [String: String]?
     private static let lock = NSLock()

@@ -23,18 +23,23 @@ public struct ModelGateway: Sendable {
         self.makeConnector = { provider in try ModelGateway.connector(for: provider, key: key) }
     }
 
-    public static func connector(for provider: ModelProvider, key: (String) -> String?) throws -> ModelConnector {
+    public static func connector(for provider: ModelProvider, key: (String) -> String?,
+                                 transport: @escaping ModelTransport = ModelTransports.urlSession) throws -> ModelConnector {
         switch provider.kind {
         case .anthropic:
             guard let apiKey = key(provider.id), !apiKey.isEmpty else {
-                throw ModelFailure.unavailable("Add your Claude key in Settings to talk to Broski.")
+                throw ModelFailure.unavailable("Add your \(provider.displayName) key in Settings › Models to use it.")
             }
-            return AnthropicConnector(apiKey: apiKey)
+            return AnthropicConnector(apiKey: apiKey, baseURL: provider.baseURL, transport: transport)
         case .openAICompatible:
             guard let url = provider.baseURL.flatMap(URL.init(string:)) else {
-                throw ModelFailure.unavailable("\(provider.id) has no address. Set it in Settings › Models.")
+                throw ModelFailure.unavailable("\(provider.displayName) has no address. Set it in Settings › Models.")
             }
-            return OpenAICompatibleConnector(baseURL: url, apiKey: key(provider.id))
+            let apiKey = key(provider.id)
+            if provider.needsKey && (apiKey ?? "").isEmpty {
+                throw ModelFailure.unavailable("Add your \(provider.displayName) key in Settings › Models to use it.")
+            }
+            return OpenAICompatibleConnector(baseURL: url, apiKey: apiKey, transport: transport)
         case .appleOnDevice:
             #if canImport(FoundationModels)
             if #available(macOS 26.0, iOS 26.0, *) { return AppleOnDeviceConnector() }
@@ -50,10 +55,81 @@ public struct ModelGateway: Sendable {
                                           spentToday: UsageLog.spent(root: root))
         var outgoing = Self.masked(request)
         if route.pdfAsText { outgoing = Self.pdfsAsText(outgoing) }
-        let reply = try await makeConnector(route.provider).send(outgoing, model: route.model)
+        if outgoing.schemaJSON != nil && !route.provider.acceptsSchema { outgoing = Self.schemaInInstructions(outgoing) }
+        let connector = try makeConnector(route.provider)
+        let reply: ModelReply
+        do {
+            do {
+                reply = try await connector.send(outgoing, model: route.model)
+            } catch ModelFailure.http(400, _) where outgoing.schemaJSON != nil && route.provider.kind == .openAICompatible {
+                // The server won't hold this model to a schema after all: once more, with the schema as instructions.
+                reply = try await connector.send(Self.schemaInInstructions(outgoing), model: route.model)
+            }
+        } catch let failure as ModelFailure {
+            throw Self.explained(failure, provider: route.provider)
+        } catch let error as URLError where error.code != .cancelled {
+            throw Self.explained(error, provider: route.provider)
+        }
         try? UsageLog.append(UsageLog.Entry(device: device, role: route.role, provider: route.provider.id, model: route.model,
                                             project: project, usage: reply.usage, task: task), root: root)
         return (reply, route)
+    }
+
+    /// Sends a request whose reply must be JSON matching `schema`, and decodes it. A provider that can't hold a reply
+    /// to a schema gets it as instructions; either way the reply is read leniently (a code fence or a sentence around
+    /// the object is fine). A reply cut off at its length limit is an error, never half an object.
+    public func sendJSON<T: Decodable>(_ type: T.Type, _ request: ModelRequest, schema: [String: Any], role: ModelRole, project: String?,
+                                       localOnly: Bool = false, task: String?) async throws -> (value: T, route: ModelRouter.Route) {
+        var request = request
+        request.schemaJSON = String(decoding: try JSONSerialization.data(withJSONObject: schema, options: [.sortedKeys]), as: UTF8.self)
+        let (reply, route) = try await send(request, role: role, project: project, localOnly: localOnly, task: task)
+        if reply.truncated { throw ModelFailure.truncated }
+        return (try ModelJSON.decode(T.self, from: reply.text), route)
+    }
+
+    static func schemaInInstructions(_ request: ModelRequest) -> ModelRequest {
+        guard let schema = request.schemaJSON else { return request }
+        var out = request
+        out.system += ModelJSON.instructions(schema)
+        out.schemaJSON = nil
+        return out
+    }
+
+    /// A provider's error in words a person can act on: whose key, what to do, where.
+    public static func explained(_ failure: ModelFailure, provider: ModelProvider) -> ModelFailure {
+        let name = provider.displayName
+        guard case .http(let status, let message) = failure else { return failure }
+        switch status {
+        case 401, 403:
+            return .unavailable("\(name) didn't accept the key. Check it in Settings › Models.")
+        case 402:
+            return .unavailable("\(name) says the account is out of credit. Add some on its website, or choose another model in Settings › Models.")
+        case 404:
+            return .unavailable("\(name) doesn't have that model (\(message.prefix(160))). Choose another in Settings › Models.")
+        case 408, 504:
+            return .unavailable("\(name) took too long to answer. Try again.")
+        case 429:
+            return .unavailable("\(name) is limiting requests on this key right now. Try again in a minute.")
+        case 500...599:
+            return .unavailable("\(name) is having trouble (\(status)). Try again in a moment.")
+        default:
+            return .unavailable("\(name) answered \(status): \(message.prefix(240))")
+        }
+    }
+
+    public static func explained(_ error: URLError, provider: ModelProvider) -> ModelFailure {
+        let name = provider.displayName
+        if [.cannotConnectToHost, .cannotFindHost].contains(error.code) && (provider.isLocal || provider.local) {
+            return .unavailable("Couldn't reach \(name) at \(provider.baseURL ?? "its address"). Is it running?")
+        }
+        switch error.code {
+        case .notConnectedToInternet, .networkConnectionLost:
+            return .unavailable("You're offline, so \(name) can't be reached.")
+        case .timedOut:
+            return .unavailable("\(name) took too long to answer. Try again.")
+        default:
+            return .unavailable("Couldn't reach \(name): \(error.localizedDescription)")
+        }
     }
 
     static func masked(_ request: ModelRequest) -> ModelRequest {

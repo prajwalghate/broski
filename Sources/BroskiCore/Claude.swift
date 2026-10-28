@@ -1,157 +1,11 @@
 import Foundation
 
-/// Which Claude does which job: Haiku for quick background work, Sonnet for the brain, Opus for thinking with you.
+/// Claude's models for each role, when Claude is the provider: Haiku for quick background work, Sonnet for everyday
+/// work, Opus for thinking with you.
 public enum ClaudeModel {
     public static let fast = "claude-haiku-5-5"
     public static let brain = "claude-sonnet-5-5"
     public static let deep = "claude-opus-5-5"
-}
-
-/// Minimal Claude Messages API client over HTTPS (Swift has no official SDK).
-public struct ClaudeClient {
-    public var apiKey: String
-    public var model: String
-    /// What calls through this client are for, in the usage log ("page", "filing", "ask"…).
-    public var task: String?
-
-    /// Sonnet unless a caller picks otherwise, so nothing lands on Opus by accident.
-    public init(apiKey: String, model: String = ClaudeModel.brain, task: String? = nil) {
-        self.apiKey = apiKey
-        self.model = model
-        self.task = task
-    }
-
-    /// Called with what each request used (model, task, tokens), so the app logs these calls with the gateway's.
-    public nonisolated(unsafe) static var onUsage: (@Sendable (_ model: String, _ task: String?, _ usage: ModelUsage) -> Void)?
-
-    /// The tokens a Messages API response says it used, cache reads and writes included.
-    public static func usage(from data: Data) -> ModelUsage? {
-        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let usage = json["usage"] as? [String: Any] else { return nil }
-        func count(_ key: String) -> Int { (usage[key] as? Int) ?? 0 }
-        return ModelUsage(input: count("input_tokens"), output: count("output_tokens"), cacheRead: count("cache_read_input_tokens"),
-                          cacheWrite: count("cache_creation_input_tokens"))
-    }
-
-    public enum Failure: LocalizedError {
-        case http(Int, String)
-        case refused
-        case empty
-        /// Ran out of max_tokens (thinking counts toward it) before the reply was finished.
-        case truncated
-        case badResponse(String)
-
-        public var errorDescription: String? {
-            switch self {
-            case .http(401, _): return "Claude rejected the API key. Check it in Settings › AI."
-            case .http(429, _): return "Claude is rate limiting this key. Try again in a moment."
-            case .http(let code, let message): return "Claude returned \(code): \(message)"
-            case .refused: return "Claude declined this request."
-            case .empty: return "Claude sent an empty reply."
-            case .truncated: return "Claude's reply hit its length limit before it finished."
-            case .badResponse(let detail): return "Couldn't read Claude's reply: \(detail)"
-            }
-        }
-    }
-
-    /// Sends one user turn. `content` is a list of Messages API content blocks.
-    /// With `schema`, the reply is constrained to JSON matching it.
-    public func send(system: String, content: [[String: Any]], schema: [String: Any]? = nil,
-                     effort: String = "low", maxTokens: Int = 4000, timeout: TimeInterval = 90,
-                     cacheSystem: Bool = false) async throws -> String {
-        try await send(system: system, messages: [["role": "user", "content": content]], schema: schema,
-                       effort: effort, maxTokens: maxTokens, timeout: timeout, cacheSystem: cacheSystem)
-    }
-
-    /// Sends a whole conversation (`[{"role": "user"|"assistant", "content": …}]`).
-    /// `cacheSystem` marks the system prompt for prompt caching, for long prompts reused across turns
-    /// (a project page, a riff). Haiku has no server-side fallback, so it's only requested for Sonnet and Opus.
-    public func send(system: String, messages: [[String: Any]], schema: [String: Any]? = nil,
-                     effort: String = "low", maxTokens: Int = 4000, timeout: TimeInterval = 90,
-                     cacheSystem: Bool = false) async throws -> String {
-        var outputConfig: [String: Any] = ["effort": effort]
-        if let schema { outputConfig["format"] = ["type": "json_schema", "schema": schema] }
-        var body: [String: Any] = [
-            "model": model,
-            "max_tokens": maxTokens,
-            "system": cacheSystem
-                ? [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]] as Any
-                : system,
-            "messages": messages,
-            "output_config": outputConfig,
-        ]
-        let fallback = !model.contains("haiku")
-        if fallback { body["fallbacks"] = "default" }
-        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
-        request.httpMethod = "POST"
-        request.timeoutInterval = timeout
-        request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        if fallback { request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta") }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        // Billed whether or not the reply turns out usable, so it's logged first.
-        if status == 200, let usage = Self.usage(from: data) { Self.onUsage?(model, task, usage) }
-        let reply = try Self.parse(data, status: status)
-        guard reply.truncated else { return reply.text }
-        // Half a JSON object is never usable; half an answer is, as long as it says it's cut off.
-        if schema != nil { throw Failure.truncated }
-        return reply.text + "\n\n(Cut off: the reply hit its length limit.)"
-    }
-
-    /// Reads a Messages API response. `truncated` means Claude stopped at max_tokens, not at the end of its answer.
-    public static func parse(_ data: Data, status: Int) throws -> (text: String, truncated: Bool) {
-        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        guard status == 200 else {
-            let message = ((json?["error"] as? [String: Any])?["message"] as? String) ?? String(decoding: data.prefix(300), as: UTF8.self)
-            throw Failure.http(status, message)
-        }
-        guard let json else { throw Failure.badResponse("not JSON") }
-        let stop = json["stop_reason"] as? String
-        if stop == "refusal" { throw Failure.refused }
-        let text = ((json["content"] as? [[String: Any]]) ?? [])
-            .filter { $0["type"] as? String == "text" }
-            .compactMap { $0["text"] as? String }
-            .joined()
-        let truncated = stop == "max_tokens"
-        // Cut off while still thinking leaves no text; say so rather than "empty".
-        guard !text.isEmpty else { throw truncated ? Failure.truncated : Failure.empty }
-        return (text, truncated)
-    }
-
-    /// Decodes a JSON reply sent with a `schema`.
-    public func sendJSON<T: Decodable>(_ type: T.Type, system: String, messages: [[String: Any]], schema: [String: Any],
-                                       effort: String = "low", maxTokens: Int = 4000, timeout: TimeInterval = 90,
-                                       cacheSystem: Bool = false) async throws -> T {
-        let reply = try await send(system: system, messages: messages, schema: schema, effort: effort,
-                                   maxTokens: maxTokens, timeout: timeout, cacheSystem: cacheSystem)
-        do {
-            return try JSONDecoder().decode(T.self, from: Data(reply.utf8))
-        } catch {
-            throw Failure.badResponse(error.localizedDescription)
-        }
-    }
-
-    /// Checks the key with a tiny request. Thinking counts toward max_tokens, so the cap leaves room for it.
-    public func verify() async throws {
-        do {
-            _ = try await ClaudeClient(apiKey: apiKey, model: ClaudeModel.fast, task: "key-check")
-                .send(system: "Reply with OK.", content: [Self.text("ping")], effort: "low", maxTokens: 1024, timeout: 30)
-        } catch Failure.empty, Failure.truncated, Failure.refused {
-            // Still a 200: the key authenticated and has credit, which is all this checks.
-        }
-    }
-
-    public static func text(_ string: String) -> [String: Any] {
-        ["type": "text", "text": string]
-    }
-
-    public static func image(_ data: Data, mediaType: String) -> [String: Any] {
-        ["type": "image", "source": ["type": "base64", "media_type": mediaType, "data": data.base64EncodedString()]]
-    }
 }
 
 // MARK: Understanding what you said
@@ -263,7 +117,7 @@ public enum Interpreter {
     Set unused string fields to "" and unused arrays to [].
     """
 
-    public static func interpret(_ request: Request, with client: ClaudeClient) async throws -> Interpretation {
+    public static func interpret(_ request: Request, gateway: ModelGateway) async throws -> Interpretation {
         var lines = [
             "Capture (\(request.spoken ? "spoken, transcribed" : "typed")):",
             request.text,
@@ -275,16 +129,10 @@ public enum Interpreter {
             lines.append("They were looking at: " + [request.context.summary, request.context.url ?? ""].filter { !$0.isEmpty }.joined(separator: " — "))
         }
         if request.attachmentCount > 0 { lines.append("Screenshots attached: \(request.attachmentCount)") }
-        // Filing is routine, so it goes to Haiku: quick, and cheap on your key.
-        let fast = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.fast, task: "filing")
-        let reply = try await fast.send(system: system, content: [ClaudeClient.text(lines.joined(separator: "\n"))],
-                                        schema: schema, effort: "low", maxTokens: 4000)
-        guard let data = reply.data(using: .utf8) else { throw ClaudeClient.Failure.badResponse("encoding") }
-        do {
-            return try JSONDecoder().decode(Interpretation.self, from: data)
-        } catch {
-            throw ClaudeClient.Failure.badResponse(error.localizedDescription)
-        }
+        // Filing is routine, so it runs on the fast model: quick, and cheap on your key.
+        let ask = ModelRequest(system: system, messages: [ModelMessage(role: .user, text: lines.joined(separator: "\n"))],
+                               maxTokens: 4000, effort: "low", timeout: 90)
+        return try await gateway.sendJSON(Interpretation.self, ask, schema: schema, role: .fast, project: nil, task: "filing").value
     }
 }
 
@@ -360,36 +208,48 @@ public enum ReportWriter {
         """
     }
 
-    /// `images` maps attachment paths to their bytes (JPEG or PNG) to show Claude.
-    public static func write(_ session: Session, images: [String: (data: Data, mediaType: String)], with client: ClaudeClient) async throws -> SessionReport {
-        // Sonnet reads screenshots and writes reports well; these used to run on Opus by default, at twice the price.
-        let client = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain, task: "report")
-        var content: [[String: Any]] = [ClaudeClient.text("Session: \(session.title) (\(session.kind.label)), project: \(session.project ?? "none"), started \(session.started)")]
-        for (index, entry) in session.entries.enumerated() {
-            var line = "Capture \(index + 1) at \(Session.entryStamp.string(from: entry.time)): \(entry.text.isEmpty ? "(no comment)" : entry.text)"
-            if !entry.context.isEmpty { line += "\n  Looking at: \(entry.context.summary) \(entry.context.url ?? "")" }
-            if !entry.attachments.isEmpty { line += "\n  Screenshots: " + entry.attachments.joined(separator: ", ") }
-            content.append(ClaudeClient.text(line))
-            for path in entry.attachments {
-                guard let image = images[path] else { continue }
-                content.append(ClaudeClient.text("Screenshot \(path):"))
-                content.append(ClaudeClient.image(image.data, mediaType: image.mediaType))
+    /// `images` maps attachment paths to their bytes (JPEG or PNG) to show the model. A model that can't read images
+    /// writes the report from the captions; a local-only session uses only models on this device.
+    public static func write(_ session: Session, images: [String: (data: Data, mediaType: String)], gateway: ModelGateway,
+                             localOnly: Bool = false) async throws -> SessionReport {
+        func request(showing: Bool, effort: String) -> ModelRequest {
+            var parts: [ModelPart] = [.text("Session: \(session.title) (\(session.kind.label)), project: \(session.project ?? "none"), started \(session.started)")]
+            var unseen = 0
+            for (index, entry) in session.entries.enumerated() {
+                var line = "Capture \(index + 1) at \(Session.entryStamp.string(from: entry.time)): \(entry.text.isEmpty ? "(no comment)" : entry.text)"
+                if !entry.context.isEmpty { line += "\n  Looking at: \(entry.context.summary) \(entry.context.url ?? "")" }
+                if !entry.attachments.isEmpty { line += "\n  Screenshots: " + entry.attachments.joined(separator: ", ") }
+                parts.append(.text(line))
+                for path in entry.attachments {
+                    guard let image = images[path] else { continue }
+                    if showing {
+                        parts.append(.text("Screenshot \(path):"))
+                        parts.append(.image(image.data, mediaType: image.mediaType))
+                    } else {
+                        unseen += 1
+                    }
+                }
+            }
+            if unseen > 0 {
+                parts.append(.text("(\(unseen) screenshot\(unseen == 1 ? "" : "s") can't be shown to you: write the report from the captions, and say the screenshots weren't reviewed.)"))
+            }
+            return ModelRequest(system: system(for: session.kind), messages: [ModelMessage(role: .user, parts: parts)],
+                                maxTokens: 16000, effort: effort, timeout: 300)
+        }
+        func send(showing: Bool) async throws -> SessionReport {
+            do {
+                return try await gateway.sendJSON(SessionReport.self, request(showing: showing, effort: "medium"), schema: schema, role: .everyday,
+                                                  project: session.project, localOnly: localOnly, task: "report").value
+            } catch ModelFailure.truncated {
+                // Out of room, usually from thinking: once more with less of it, leaving the tokens for the report.
+                return try await gateway.sendJSON(SessionReport.self, request(showing: showing, effort: "low"), schema: schema, role: .everyday,
+                                                  project: session.project, localOnly: localOnly, task: "report").value
             }
         }
-        let reply: String
         do {
-            reply = try await client.send(system: system(for: session.kind), content: content, schema: schema,
-                                          effort: "medium", maxTokens: 16000, timeout: 300)
-        } catch ClaudeClient.Failure.truncated {
-            // Out of room, usually from thinking: once more with less of it, leaving the tokens for the report.
-            reply = try await client.send(system: system(for: session.kind), content: content, schema: schema,
-                                          effort: "low", maxTokens: 16000, timeout: 300)
-        }
-        guard let data = reply.data(using: .utf8) else { throw ClaudeClient.Failure.badResponse("encoding") }
-        do {
-            return try JSONDecoder().decode(SessionReport.self, from: data)
-        } catch {
-            throw ClaudeClient.Failure.badResponse(error.localizedDescription)
+            return try await send(showing: true)
+        } catch ModelRouter.Refusal.cantRead(.images) {
+            return try await send(showing: false)
         }
     }
 

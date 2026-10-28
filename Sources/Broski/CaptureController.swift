@@ -340,7 +340,7 @@ final class CaptureController: NSObject {
         model.reset(projects: library.catalog.projects)
         model.context = context
         model.session = library.activeSession
-        model.aiEnabled = brain.hasKey
+        model.aiEnabled = brain.hasModel
         model.lastItem = canAddMore ? lastItem : nil
         model.appendTarget = target
         model.phase = .typing

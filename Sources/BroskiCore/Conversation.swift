@@ -400,15 +400,14 @@ public enum FirstRun {
 
 /// Whether anything can answer yet, and the one-tap setup for Apple's on-device model.
 public enum ModelSetup {
-    /// Some role has a model that can answer now: Claude with a key, any OpenAI-compatible server, or Apple's model where
-    /// it's available.
-    public static func ready(_ settings: ModelSettings, claudeKey: Bool, appleAvailable: Bool) -> Bool {
+    /// Some role has a model that can answer now: a cloud provider with its key, a server that needs none (one on this
+    /// Mac, or one added by hand), or Apple's model where it's available.
+    public static func ready(_ settings: ModelSettings, hasKey: (String) -> Bool, appleAvailable: Bool) -> Bool {
         (Array(settings.roles.values) + Array(settings.localRoles.values)).contains { choice in
-            switch settings.provider(choice.provider)?.kind {
-            case .anthropic: return claudeKey
-            case .openAICompatible: return true
+            guard let provider = settings.provider(choice.provider) else { return false }
+            switch provider.kind {
+            case .anthropic, .openAICompatible: return !provider.needsKey || hasKey(provider.id)
             case .appleOnDevice: return appleAvailable
-            case nil: return false
             }
         }
     }

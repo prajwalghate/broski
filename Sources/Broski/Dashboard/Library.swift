@@ -300,17 +300,17 @@ final class Library: ObservableObject {
                 fresh[project.name] = existing
                 continue
             }
-            let canCompile = settings.autoCompile && brain.hasKey && !settings.localOnly.contains(project.name)
-            // Claude's page can't be rewritten (no key, auto-compile off, local only): the rules keep it current instead.
+            let canCompile = settings.autoCompile && brain.hasModel && !settings.localOnly.contains(project.name)
+            // The model's page can't be rewritten (no model, auto-compile off, local only): the rules keep it current instead.
             if existing == nil || existing?.source == .rules || !canCompile {
                 let page = ProjectPageBuilder.rules(project: project.name, refs: refs, items: project.items, sessions: project.sessions)
                 try? page.save(to: store)
                 fresh[project.name] = page
             } else {
-                // Keep Claude's last page on screen until the new one is ready.
+                // Keep the model's last page on screen until the new one is ready.
                 fresh[project.name] = existing
             }
-            // Claude rewrites a page at most every 6 hours when its notes change, and once a day when only its tracker
+            // The model rewrites a page at most every 6 hours when its notes change, and once a day when only its tracker
             // moved; the rules page above keeps it current in between, and Refresh rewrites it at once.
             if canCompile {
                 let notes = ProjectPage.fingerprint(refs.filter { !$0.isTrackerRecord })
@@ -323,7 +323,7 @@ final class Library: ObservableObject {
         scheduleCompiles(after: 20)
     }
 
-    /// Rewrites a project's page with Claude now (the Refresh button).
+    /// Rewrites a project's page with the model now (the Refresh button).
     func compilePage(_ project: String) {
         pendingCompiles.insert(project)
         scheduleCompiles(after: 0)
@@ -331,7 +331,7 @@ final class Library: ObservableObject {
 
     private func scheduleCompiles(after seconds: Double) {
         // A run in progress picks up new work itself; cancelling it would throw away a reply mid-flight.
-        guard !pendingCompiles.isEmpty, brain.hasKey, !compileRunning else { return }
+        guard !pendingCompiles.isEmpty, brain.hasModel, !compileRunning else { return }
         compileTask?.cancel()
         compileTask = Task { [weak self] in
             // Wait for a pause in note-taking, so a burst of captures compiles once.
@@ -346,13 +346,13 @@ final class Library: ObservableObject {
         defer { compileRunning = false }
         while let name = pendingCompiles.first {
             pendingCompiles.remove(name)
-            guard let client = brain.client, !brainSettings().localOnly.contains(name) else { continue }
+            guard let gateway = brain.gateway, !brainSettings().localOnly.contains(name) else { continue }
             let refs = pageInputs(name)
             guard !refs.isEmpty else { continue }
             compiling.insert(name)
             do {
-                var page = try await ProjectPageBuilder.compile(project: name, refs: refs, previous: pages[name], client: client)
-                // A suggestion dismissed (or acted on) while Claude was writing stays dismissed.
+                var page = try await ProjectPageBuilder.compile(project: name, refs: refs, previous: pages[name], gateway: gateway)
+                // A suggestion dismissed (or acted on) while the model was writing stays dismissed.
                 let dismissed = pages[name]?.actions.filter(\.dismissed) ?? []
                 for i in page.actions.indices {
                     let action = page.actions[i]
@@ -414,7 +414,7 @@ final class Library: ObservableObject {
         let localOnly = brainSettings().localOnly
         let briefing = await briefing(for: question, localOnly: localOnly)
         return try await Ask.answer(question, index: index, catalog: catalog, pages: Array(pages.values),
-                                    client: brain.client, localOnly: localOnly, briefing: briefing, limit: 18)
+                                    gateway: brain.gateway, localOnly: localOnly, briefing: briefing, limit: 18)
     }
 
     /// What search alone can't find: what's waiting on the user, what changed, and live readings from a tracker's
@@ -745,15 +745,15 @@ final class Library: ObservableObject {
         perform { _ = try store.endSession(session) }
     }
 
-    /// Writes report.md with Claude (screenshots included) or, without a key, as a plain list.
+    /// Writes report.md with the everyday model (screenshots included, when it reads images) or, without one, as a plain list.
     func writeReport(for session: Session) async {
         writingReport = session.id
         defer { writingReport = nil }
-        // A local-only project's entries and screenshots never go to Claude, report included.
+        // A local-only project's entries and screenshots never go to a cloud model, report included.
         if let project = session.project, brainSettings().localOnly.union(brain.localOnly()).contains(project) {
             try? store.writeReport(ReportWriter.basic(session), for: session)
             show("Plain report written: \(project) is local only.")
-        } else if brain.client != nil {
+        } else if brain.hasModel {
             do {
                 let report = try await brain.report(for: session)
                 try store.writeReport(report.reportMarkdown, for: session)
@@ -761,11 +761,11 @@ final class Library: ObservableObject {
                 show(report.issues.isEmpty ? "Report written" : "Report written with \(report.issues.count) issues")
             } catch {
                 try? store.writeReport(ReportWriter.basic(session), for: session)
-                show("Claude couldn't write it (\(error.localizedDescription)), so this is a plain report.")
+                show("The model couldn't write it (\(error.localizedDescription)), so this is a plain report.")
             }
         } else {
             try? store.writeReport(ReportWriter.basic(session), for: session)
-            show("Plain report written. Add a Claude key in Settings for a full write-up.")
+            show("Plain report written. Choose a model in Settings › Models for a full write-up.")
         }
         reload()
     }

@@ -51,15 +51,28 @@ public struct ModelProvider: Codable, Equatable, Identifiable, Sendable {
     public var baseURL: String?
     /// The user says it runs on this device. It only counts when the address really is this device (see `isLocal`).
     public var local: Bool
+    /// Only the values older versions know go here (they read config.json too); newer facts are optional fields.
     public var capabilities: Set<ModelCapability>
+    /// The `ProviderPreset` it was made from ("openai"); nil for providers added before presets.
+    public var preset: String?
+    /// A name you gave it; nil uses the preset's.
+    public var name: String?
+    /// Whether its API holds replies to a JSON schema; nil uses the preset's answer.
+    public var structuredOutput: Bool?
 
-    public init(id: String, kind: Kind, baseURL: String? = nil, local: Bool = false, capabilities: Set<ModelCapability>? = nil) {
+    public init(id: String, kind: Kind, baseURL: String? = nil, local: Bool = false, capabilities: Set<ModelCapability>? = nil,
+                preset: String? = nil, name: String? = nil, structuredOutput: Bool? = nil) {
         self.id = id
         self.kind = kind
         self.baseURL = baseURL
         self.local = local
         self.capabilities = capabilities ?? (kind == .anthropic ? [.images, .pdfs, .caching] : [])
+        self.preset = preset
+        self.name = name
+        self.structuredOutput = structuredOutput
     }
+
+    static let loopback: Set<String> = ["127.0.0.1", "localhost", "::1", "[::1]"]
 
     /// Runs on this device: Apple's model, or an OpenAI-compatible server on a loopback address marked local.
     public var isLocal: Bool {
@@ -68,9 +81,18 @@ public struct ModelProvider: Codable, Equatable, Identifiable, Sendable {
         case .anthropic: return false
         case .openAICompatible:
             guard local, let host = baseURL.flatMap(URL.init(string:))?.host?.lowercased() else { return false }
-            return ["127.0.0.1", "localhost", "::1", "[::1]"].contains(host)
+            return Self.loopback.contains(host)
         }
     }
+
+    /// "OpenAI", "Ollama", or the id of a server added by hand.
+    public var displayName: String { name ?? ProviderPreset.of(self).map { $0.id == ProviderPreset.custom.id ? id : $0.name } ?? id }
+
+    /// A cloud provider that won't answer without a key.
+    public var needsKey: Bool { kind == .anthropic || (ProviderPreset.of(self)?.needsKey ?? false) }
+
+    /// Its API can hold a reply to a JSON schema (otherwise the schema goes in the instructions).
+    public var acceptsSchema: Bool { structuredOutput ?? ProviderPreset.of(self)?.structuredOutput ?? (kind == .anthropic) }
 }
 
 public struct ModelChoice: Codable, Equatable, Sendable {
@@ -249,9 +271,11 @@ public struct ModelRequest: Equatable, Sendable {
     public var effort: String
     /// A JSON schema the reply must match, as JSON text; nil for free text.
     public var schemaJSON: String?
+    /// Seconds to wait for the whole reply.
+    public var timeout: TimeInterval
 
     public init(system: String, messages: [ModelMessage], maxTokens: Int = 4000, cacheSystem: Bool = false, cacheHistory: Bool = false,
-                effort: String = "low", schemaJSON: String? = nil) {
+                effort: String = "low", schemaJSON: String? = nil, timeout: TimeInterval = 120) {
         self.system = system
         self.messages = messages
         self.maxTokens = maxTokens
@@ -259,6 +283,7 @@ public struct ModelRequest: Equatable, Sendable {
         self.cacheHistory = cacheHistory
         self.effort = effort
         self.schemaJSON = schemaJSON
+        self.timeout = timeout
     }
 
     /// What the model has to be able to read.
@@ -300,6 +325,9 @@ public enum ModelFailure: Error, Equatable, LocalizedError {
     case http(Int, String)
     case badResponse(String)
     case empty
+    /// Stopped at its length limit with nothing usable (a JSON reply cut in half, or only thinking).
+    case truncated
+    case refused
     case unavailable(String)
 
     public var errorDescription: String? {
@@ -307,6 +335,8 @@ public enum ModelFailure: Error, Equatable, LocalizedError {
         case .http(let status, let message): return "The model answered \(status): \(message)"
         case .badResponse(let why): return "The model's reply couldn't be read (\(why))."
         case .empty: return "The model sent an empty reply."
+        case .truncated: return "The model's reply hit its length limit before it finished."
+        case .refused: return "The model declined this request."
         case .unavailable(let why): return why
         }
     }
@@ -316,17 +346,47 @@ public protocol ModelConnector: Sendable {
     func send(_ request: ModelRequest, model: String) async throws -> ModelReply
 }
 
+/// How a connector reaches its server; tests pass their own, so no test touches the network.
+public typealias ModelTransport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
+
+public enum ModelTransports {
+    public static let urlSession: ModelTransport = { request in try await URLSession.shared.data(for: request) }
+}
+
+private func status(_ response: URLResponse) -> Int { (response as? HTTPURLResponse)?.statusCode ?? 0 }
+
+/// The error message in a provider's JSON error reply, else the start of what it sent.
+private func errorMessage(_ data: Data, json: [String: Any]?) -> String {
+    ((json?["error"] as? [String: Any])?["message"] as? String) ?? (json?["error"] as? String)
+        ?? String(decoding: data.prefix(300), as: UTF8.self)
+}
+
 // MARK: Connectors
 
-/// Claude, through the Messages API.
+/// Claude through the Messages API: Anthropic's own, or another address that speaks it (a company gateway, a proxy).
 public struct AnthropicConnector: ModelConnector {
+    public static let defaultBase = "https://api.anthropic.com"
     public var apiKey: String
+    public var baseURL: String
+    public var transport: ModelTransport
 
-    public init(apiKey: String) {
+    public init(apiKey: String, baseURL: String? = nil, transport: @escaping ModelTransport = ModelTransports.urlSession) {
         self.apiKey = apiKey
+        self.baseURL = baseURL ?? Self.defaultBase
+        self.transport = transport
     }
 
-    public static func body(for request: ModelRequest, model: String) -> [String: Any] {
+    /// Server-side fallbacks are Anthropic's own; another address gets a plain Messages API call.
+    var isAnthropic: Bool { URL(string: baseURL)?.host?.lowercased() == "api.anthropic.com" }
+
+    static func endpoint(_ base: String, _ path: String) -> URL? {
+        var trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        if trimmed.hasSuffix("/v1") { trimmed.removeLast(3) }
+        return URL(string: trimmed + "/v1/" + path)
+    }
+
+    public static func body(for request: ModelRequest, model: String, extras: Bool = true) -> [String: Any] {
         var output: [String: Any] = ["effort": request.effort]
         if let schema = request.schemaJSON.flatMap({ try? JSONSerialization.jsonObject(with: Data($0.utf8)) }) {
             output["format"] = ["type": "json_schema", "schema": schema]
@@ -341,7 +401,7 @@ public struct AnthropicConnector: ModelConnector {
             "output_config": output,
         ]
         // Haiku has no server-side fallback.
-        if !model.contains("haiku") { body["fallbacks"] = "default" }
+        if extras && !model.contains("haiku") { body["fallbacks"] = "default" }
         return body
     }
 
@@ -359,44 +419,82 @@ public struct AnthropicConnector: ModelConnector {
 
     static func block(_ part: ModelPart) -> [String: Any] {
         switch part {
-        case .text(let text): return ClaudeClient.text(text)
-        case .image(let data, let mediaType): return ClaudeClient.image(data, mediaType: mediaType)
+        case .text(let text): return ["type": "text", "text": text]
+        case .image(let data, let mediaType):
+            return ["type": "image", "source": ["type": "base64", "media_type": mediaType, "data": data.base64EncodedString()]]
         case .pdf(let data):
             return ["type": "document", "source": ["type": "base64", "media_type": "application/pdf", "data": data.base64EncodedString()]]
         }
     }
 
+    /// Reads a Messages API reply. `truncated` means it stopped at max_tokens, not at the end of its answer; cut off
+    /// while still thinking (no text at all) is `ModelFailure.truncated`.
     public static func parse(_ data: Data, status: Int) throws -> ModelReply {
-        let reply = try ClaudeClient.parse(data, status: status)
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        let usage = json?["usage"] as? [String: Any] ?? [:]
-        return ModelReply(text: reply.text, truncated: reply.truncated, usage: ModelUsage(
+        guard status == 200 else { throw ModelFailure.http(status, errorMessage(data, json: json)) }
+        guard let json else { throw ModelFailure.badResponse("not JSON") }
+        let stop = json["stop_reason"] as? String
+        if stop == "refusal" { throw ModelFailure.refused }
+        let text = ((json["content"] as? [[String: Any]]) ?? [])
+            .filter { $0["type"] as? String == "text" }
+            .compactMap { $0["text"] as? String }
+            .joined()
+        let truncated = stop == "max_tokens"
+        guard !text.isEmpty else { throw truncated ? ModelFailure.truncated : ModelFailure.empty }
+        let usage = json["usage"] as? [String: Any] ?? [:]
+        return ModelReply(text: text, truncated: truncated, usage: ModelUsage(
             input: usage["input_tokens"] as? Int ?? 0, output: usage["output_tokens"] as? Int ?? 0,
             cacheRead: usage["cache_read_input_tokens"] as? Int ?? 0, cacheWrite: usage["cache_creation_input_tokens"] as? Int ?? 0))
     }
 
+    /// The model ids in a `/v1/models` reply, sorted.
+    static func parseModels(_ data: Data) -> [String] {
+        OpenAICompatibleConnector.parseModels(data)
+    }
+
+    func headers(_ request: inout URLRequest) {
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+    }
+
+    public static func models(apiKey: String, baseURL: String? = nil, transport: @escaping ModelTransport = ModelTransports.urlSession) async throws -> [String] {
+        let connector = AnthropicConnector(apiKey: apiKey, baseURL: baseURL, transport: transport)
+        guard let url = endpoint(connector.baseURL, "models?limit=1000") else { throw ModelFailure.unavailable("That address isn't a URL.") }
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        connector.headers(&request)
+        let (data, response) = try await transport(request)
+        guard (200..<300).contains(status(response)) else {
+            throw ModelFailure.http(status(response), errorMessage(data, json: (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]))
+        }
+        return parseModels(data)
+    }
+
     public func send(_ request: ModelRequest, model: String) async throws -> ModelReply {
-        var urlRequest = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        guard let url = Self.endpoint(baseURL, "messages") else { throw ModelFailure.unavailable("\(baseURL) isn't a URL.") }
+        var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
-        urlRequest.timeoutInterval = 120
-        urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
-        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        if !model.contains("haiku") { urlRequest.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta") }
-        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: Self.body(for: request, model: model))
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        return try Self.parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        urlRequest.timeoutInterval = request.timeout
+        headers(&urlRequest)
+        let fallback = isAnthropic && !model.contains("haiku")
+        if fallback { urlRequest.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta") }
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: Self.body(for: request, model: model, extras: isAnthropic))
+        let (data, response) = try await transport(urlRequest)
+        return try Self.parse(data, status: status(response))
     }
 }
 
-/// Any server speaking OpenAI's chat completions: OpenAI, Gemini's compatible API, OpenRouter, Ollama, LM Studio.
+/// Any server speaking OpenAI's chat completions: OpenAI, Gemini's compatible API, OpenRouter, Groq, Mistral,
+/// DeepSeek, Ollama, LM Studio, llama.cpp, vLLM.
 public struct OpenAICompatibleConnector: ModelConnector {
     public var baseURL: URL
     public var apiKey: String?
+    public var transport: ModelTransport
 
-    public init(baseURL: URL, apiKey: String? = nil) {
+    public init(baseURL: URL, apiKey: String? = nil, transport: @escaping ModelTransport = ModelTransports.urlSession) {
         self.baseURL = baseURL
         self.apiKey = apiKey
+        self.transport = transport
     }
 
     static func modelsURL(_ base: String) -> URL? {
@@ -412,24 +510,27 @@ public struct OpenAICompatibleConnector: ModelConnector {
         return list.compactMap { $0["id"] as? String }.sorted()
     }
 
-    /// What the server at `base` offers (Ollama, LM Studio, llama.cpp, vLLM, OpenRouter all answer `/models`).
-    public static func models(base: String, apiKey: String?) async throws -> [String] {
+    /// What the server at `base` offers (OpenAI, Gemini, OpenRouter, Ollama, LM Studio, llama.cpp, vLLM all answer `/models`).
+    public static func models(base: String, apiKey: String?, transport: @escaping ModelTransport = ModelTransports.urlSession) async throws -> [String] {
         guard let url = modelsURL(base) else { throw ModelFailure.unavailable("That address isn't a URL.") }
-        var request = URLRequest(url: url, timeoutInterval: 10)
+        var request = URLRequest(url: url, timeoutInterval: 15)
         if let apiKey, !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else { throw ModelFailure.unavailable("The server answered \(status).") }
+        let (data, response) = try await transport(request)
+        guard (200..<300).contains(status(response)) else {
+            throw ModelFailure.http(status(response), errorMessage(data, json: (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]))
+        }
         return parseModels(data)
     }
 
-    public static func body(for request: ModelRequest, model: String) -> [String: Any] {
+    /// OpenAI's newer models take `max_completion_tokens` and refuse `max_tokens`; every other server takes `max_tokens`.
+    public static func body(for request: ModelRequest, model: String, host: String? = nil) -> [String: Any] {
         var messages: [[String: Any]] = [["role": "system", "content": request.system]]
         for message in request.messages {
             let textOnly = message.parts.allSatisfy { if case .text = $0 { return true } else { return false } }
             messages.append(["role": message.role.rawValue, "content": textOnly ? message.text as Any : message.parts.map(part) as Any])
         }
-        var body: [String: Any] = ["model": model, "messages": messages, "max_tokens": request.maxTokens]
+        var body: [String: Any] = ["model": model, "messages": messages]
+        body[host == "api.openai.com" ? "max_completion_tokens" : "max_tokens"] = request.maxTokens
         if let schema = request.schemaJSON.flatMap({ try? JSONSerialization.jsonObject(with: Data($0.utf8)) }) {
             body["response_format"] = ["type": "json_schema", "json_schema": ["name": "reply", "schema": schema]]
         }
@@ -449,27 +550,27 @@ public struct OpenAICompatibleConnector: ModelConnector {
 
     public static func parse(_ data: Data, status: Int) throws -> ModelReply {
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        guard status == 200 else {
-            let message = ((json?["error"] as? [String: Any])?["message"] as? String) ?? String(decoding: data.prefix(300), as: UTF8.self)
-            throw ModelFailure.http(status, message)
-        }
+        guard status == 200 else { throw ModelFailure.http(status, errorMessage(data, json: json)) }
         guard let json else { throw ModelFailure.badResponse("not JSON") }
         let choice = (json["choices"] as? [[String: Any]])?.first
-        guard let text = (choice?["message"] as? [String: Any])?["content"] as? String, !text.isEmpty else { throw ModelFailure.empty }
+        let finish = choice?["finish_reason"] as? String
+        guard let text = (choice?["message"] as? [String: Any])?["content"] as? String, !text.isEmpty else {
+            throw finish == "length" ? ModelFailure.truncated : ModelFailure.empty
+        }
         let usage = json["usage"] as? [String: Any] ?? [:]
-        return ModelReply(text: text, truncated: choice?["finish_reason"] as? String == "length",
+        return ModelReply(text: text, truncated: finish == "length",
                           usage: ModelUsage(input: usage["prompt_tokens"] as? Int ?? 0, output: usage["completion_tokens"] as? Int ?? 0))
     }
 
     public func send(_ request: ModelRequest, model: String) async throws -> ModelReply {
         var urlRequest = URLRequest(url: baseURL.appendingPathComponent("chat/completions"))
         urlRequest.httpMethod = "POST"
-        urlRequest.timeoutInterval = 180
+        urlRequest.timeoutInterval = max(request.timeout, 180)
         urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
-        if let apiKey, !apiKey.isEmpty { urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "authorization") }
-        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: Self.body(for: request, model: model))
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        return try Self.parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        if let apiKey, !apiKey.isEmpty { urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: Self.body(for: request, model: model, host: baseURL.host?.lowercased()))
+        let (data, response) = try await transport(urlRequest)
+        return try Self.parse(data, status: status(response))
     }
 }
 

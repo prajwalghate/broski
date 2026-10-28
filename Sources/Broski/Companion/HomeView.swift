@@ -126,16 +126,14 @@ final class HomeModel: ObservableObject {
     /// Packs a new project can use: the built-ins (but core, which every project has) and your own.
     var packs: [Pack] { Packs.all(root: root).filter { $0.id != "core" } }
 
-    /// Nothing can answer yet: no Claude key, no local server, Apple's model not set up.
+    /// Nothing can answer yet: no provider with its key, no model on this Mac, Apple's model not set up.
     var needsModel: Bool {
-        !ModelSetup.ready(config().models ?? .defaults, claudeKey: Secrets.get(Secrets.claudeKey) != nil,
+        !ModelSetup.ready(config().models ?? .defaults, hasKey: { Secrets.key(forProvider: $0) != nil },
                           appleAvailable: ModelsSettings.appleAvailable)
     }
 
     var gateway: ModelGateway {
-        ModelGateway(settings: config().models ?? .defaults, root: root, device: "mac") { id in
-            id == "claude" ? Secrets.get(Secrets.claudeKey) : Secrets.get("model.\(id)")
-        }
+        ModelGateway(settings: config().models ?? .defaults, root: root, device: "mac") { Secrets.key(forProvider: $0) }
     }
 
     private var localOnlyProjects: Set<String> { Set(config().localOnlyProjects) }

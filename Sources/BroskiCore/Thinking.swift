@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: Riff mode
 
-/// Thinking out loud with Claude about a project. Claude knows the project's living page, pushes back,
+/// Thinking out loud with a model about a project. It knows the project's living page, pushes back,
 /// asks the next good question, and at the end turns the conversation into a note.
 public struct Riff: Equatable {
     public struct Turn: Equatable, Identifiable {
@@ -44,13 +44,13 @@ public struct Riff: Equatable {
         return text
     }
 
-    /// Broski's next reply. The project page sits in a cached system prompt, so long riffs stay cheap.
-    public func reply(page: ProjectPage?, client: ClaudeClient) async throws -> String {
-        let deep = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.deep, task: "riff")
-        let messages: [[String: Any]] = turns.map { ["role": $0.role.rawValue, "content": $0.text] }
-        return try await deep.send(system: Self.system(page: page, project: project), messages: messages,
-                                   effort: "medium", maxTokens: 6000, timeout: 120, cacheSystem: page != nil)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Broski's next reply, from the deep model. The project page sits in a cached system prompt, so long riffs stay cheap.
+    public func reply(page: ProjectPage?, gateway: ModelGateway, localOnly: Bool = false) async throws -> String {
+        let messages = turns.map { ModelMessage(role: $0.role == .you ? .user : .assistant, text: $0.text) }
+        let request = ModelRequest(system: Self.system(page: page, project: project), messages: messages, maxTokens: 6000,
+                                   cacheSystem: page != nil, effort: "medium")
+        let (reply, _) = try await gateway.send(request, role: .deep, project: project, localOnly: localOnly, task: "riff")
+        return reply.text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public struct WrapUp: Decodable, Equatable {
@@ -81,19 +81,19 @@ public struct Riff: Equatable {
     ]
 
     /// The riff as a note: what you landed on, the ideas worth keeping, and todos to file.
-    public func wrapUp(client: ClaudeClient) async throws -> WrapUp {
+    public func wrapUp(gateway: ModelGateway, localOnly: Bool = false) async throws -> WrapUp {
         let transcript = turns.map { "\($0.role == .you ? "Me" : "Broski"): \($0.text)" }.joined(separator: "\n\n")
-        let brain = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain, task: "riff")
-        return try await brain.sendJSON(WrapUp.self, system: """
+        let request = ModelRequest(system: """
             Turn this riff between a builder and their thinking partner into a note they'll want to reread. \
             title: under 70 characters, what the riff was about. summary_markdown: 3–6 sentences on where they \
             landed, in their voice ("I" not "the user"). ideas, decisions, todos: short, concrete, only what they \
             actually said or agreed to. Empty lists are fine.
-            """, messages: [["role": "user", "content": [ClaudeClient.text(transcript)]]], schema: Self.wrapSchema,
-            effort: "low", maxTokens: 6000)
+            """, messages: [ModelMessage(role: .user, text: transcript)], maxTokens: 6000, effort: "low")
+        return try await gateway.sendJSON(WrapUp.self, request, schema: Self.wrapSchema, role: .everyday, project: project,
+                                          localOnly: localOnly, task: "riff").value
     }
 
-    /// Without Claude: the transcript itself becomes the note.
+    /// Without a model: the transcript itself becomes the note.
     public var plainNote: (title: String, body: String) {
         let first = turns.first { $0.role == .you }?.text ?? "Riff"
         let title = "Riff: " + String(first.prefix(60))
@@ -123,15 +123,15 @@ public enum ScreenHelp {
     }
 
     public static func help(screenshot: Data, mediaType: String, context: ItemContext, page: ProjectPage?,
-                            question: String?, client: ClaudeClient) async throws -> String {
-        let brain = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain, task: "help")
+                            question: String?, gateway: ModelGateway, project: String?, localOnly: Bool = false) async throws -> String {
         var note = "Looking at: " + [context.summary, context.url ?? ""].filter { !$0.isEmpty }.joined(separator: " — ")
         if let selection = context.selection, !selection.isEmpty { note += "\nSelected text:\n" + selection.prefix(3000) }
         if let question, !question.isEmpty { note += "\nTheir question: \(question)" }
-        return try await brain.send(system: system(page: page), messages: [[
-            "role": "user", "content": [ClaudeClient.image(screenshot, mediaType: mediaType), ClaudeClient.text(note)],
-        ]], effort: "medium", maxTokens: 8000, timeout: 120, cacheSystem: page != nil)
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = ModelRequest(system: system(page: page), messages: [ModelMessage(role: .user, parts: [.image(screenshot, mediaType: mediaType), .text(note)])],
+                                   maxTokens: 8000, cacheSystem: page != nil, effort: "medium")
+        let (reply, _) = try await gateway.send(request, role: .everyday, project: project, localOnly: localOnly, task: "help")
+        let text = reply.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return reply.truncated ? text + "\n\n(Cut off: the reply hit its length limit.)" : text
     }
 }
 
@@ -199,7 +199,7 @@ public struct CallTranscript: Equatable {
         ],
     ]
 
-    public func notes(project: String?, page: ProjectPage?, client: ClaudeClient) async throws -> Notes {
+    public func notes(project: String?, page: ProjectPage?, gateway: ModelGateway, localOnly: Bool = false) async throws -> Notes {
         var system = """
         Write notes from this call transcript for a solo builder. "Me" is the user; "Them" is everyone else on the \
         call (one mixed audio track, so "Them" may be several people). Lines marked ★ are moments the user flagged \
@@ -209,9 +209,9 @@ public struct CallTranscript: Equatable {
         have slips, so don't over-trust odd words.
         """
         if let page { system += "\n\nContext, the project's living page:\n" + (page.render().components(separatedBy: "\n---\n").last ?? "") }
-        let brain = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain, task: "call")
-        return try await brain.sendJSON(Notes.self, system: system,
-                                        messages: [["role": "user", "content": [ClaudeClient.text(text)]]],
-                                        schema: Self.schema, effort: "medium", maxTokens: 12000, timeout: 180)
+        let request = ModelRequest(system: system, messages: [ModelMessage(role: .user, text: text)], maxTokens: 12000, effort: "medium",
+                                   timeout: 180)
+        return try await gateway.sendJSON(Notes.self, request, schema: Self.schema, role: .everyday, project: project,
+                                          localOnly: localOnly, task: "call").value
     }
 }

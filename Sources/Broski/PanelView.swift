@@ -371,7 +371,7 @@ struct PanelView: View {
         if model.thinkingProposal && model.proposal == nil {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
-                Text(model.aiEnabled ? "Claude is working out where this goes…" : "Working out where this goes…")
+                Text("Working out where this goes…")
             }
             .font(.system(size: 11)).foregroundStyle(.secondary)
         } else if let plan = proposalText {
@@ -503,7 +503,7 @@ struct PanelView: View {
             Label(model.aiEnabled ? "\(model.voiceEngine) + Claude" : model.voiceEngine, systemImage: model.aiEnabled ? "sparkles" : "waveform")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
-                .help(model.aiEnabled ? "Local \(model.voiceEngine) writes the text; Claude files it" : "Add a Claude key in Settings to tidy and file notes automatically")
+                .help(model.aiEnabled ? "Local \(model.voiceEngine) writes the text; your model files it" : "Choose a model in Settings › Models to tidy and file notes automatically")
         }
     }
 
@@ -599,7 +599,7 @@ struct PanelView: View {
             if !model.clips.isEmpty && model.text.isEmpty { return "Add what you think, or keep highlighting and press \(model.clipShortcut)" }
             return "Type, or hold \(model.shortcut) or click the mic to talk"
         case .transcribing: return "Local Whisper, on this Mac"
-        case .thinking: return model.aiEnabled ? "Claude is deciding where it goes" : "Using Broski's rules"
+        case .thinking: return model.aiEnabled ? "Deciding where it goes" : "Using Broski's rules"
         case .saving: return model.savedDetail
         case .saved: return "Idea secured"
         case .cancelled, .error: return "Nothing saved"

@@ -245,12 +245,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         library.projectRoots = { [weak self] in self?.config.projectRootURLs ?? [] }
         library.brainSettings = { [weak self] in (self?.config.autoCompilePages ?? true, Set(self?.config.localOnlyProjects ?? [])) }
         brain.localOnly = { [weak self] in Set(self?.config.localOnlyProjects ?? []) }
-        // Calls that don't go through the model gateway yet (pages, filing, Ask, help, calls, reports) are logged with
-        // the rest, so Settings › Models shows every dollar.
-        ClaudeClient.onUsage = { [root] model, task, usage in
-            try? UsageLog.append(UsageLog.Entry(device: "mac", role: UsageLog.role(forModel: model), provider: "claude", model: model,
-                                                project: nil, usage: usage, task: task ?? "other"), root: root)
-        }
+        brain.makeGateway = { [weak self] in self?.makeGateway() }
         capture.onStateChange = { [weak self] in self?.captureChanged() }
         capture.onOpenDashboard = { [weak self] project in self?.showDashboard(project: project) }
         capture.onOpenSettings = { [weak self] in self?.showSettings() }
@@ -309,6 +304,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
             }
         }
         capture.apply(config: new)
+        if old.models != new.models { brain.refresh() }
         capture.engine.voiceIsolation = new.voiceIsolation
         if old.hotkey != new.hotkey || old.frontDoor != new.frontDoor || old.noteHotkey != new.noteHotkey { registerHotKey() }
         if old.fnHoldToTalk != new.fnHoldToTalk { applyFnKey() }
@@ -446,7 +442,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
     var problems: [String] {
         var list = [capture.speechProblem, shortcutProblem, configWarning].compactMap { $0 }
         if case .failed(let message) = transcription.state { list.append("Voice model: \(message)") }
-        if let ai = brain.lastProblem { list.append("Claude: \(ai)") }
+        if let ai = brain.lastProblem { list.append("Model: \(ai)") }
         return list
     }
 
@@ -535,11 +531,9 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         return model
     }()
 
-    /// Every model call goes through one gateway: Claude's key from the Keychain, others under "model.<id>".
+    /// Every model call goes through one gateway, with each provider's key from this Mac's secrets file.
     func makeGateway() -> ModelGateway {
-        ModelGateway(settings: config.models ?? .defaults, root: root, device: "mac") { id in
-            id == "claude" ? Secrets.get(Secrets.claudeKey) : Secrets.get("model.\(id)")
-        }
+        ModelGateway(settings: config.models ?? .defaults, root: root, device: "mac") { Secrets.key(forProvider: $0) }
     }
 
     private(set) lazy var automator = Automator(root: root) { [weak self] in self?.config ?? .defaults }
@@ -737,7 +731,7 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         Broski \(version) on macOS \(ProcessInfo.processInfo.operatingSystemVersionString)
         Microphone: \(Permissions.microphone), speech: \(Permissions.speech), language: \(config.locale) (\(capture.engine.localeIdentifier), on-device \(capture.engine.isOnDevice))
         Floating button: \(config.showFloatingButton), wake word: \(config.wakeWordEnabled), shortcut: \(config.hotkey)
-        Voice model: \(transcription.state), Claude key: \(brain.hasKey ? "set" : "none")
+        Voice model: \(transcription.state), model ready: \(brain.hasModel ? "yes" : "no")
         Project folders: \(config.projectRoots.count), projects: \(library.projects.count), notes: \(library.allItems.count), sessions: \(library.allSessions.count)
         Problems: \(problems.isEmpty ? "none" : problems.joined(separator: " | "))
 

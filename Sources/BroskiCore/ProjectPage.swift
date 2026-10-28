@@ -291,9 +291,9 @@ public enum ProjectPageBuilder {
         ]
     }()
 
-    /// The page compiled by Claude from the project's notes. Citations that don't match a real note are dropped.
-    public static func compile(project: String, refs: [NoteRef], previous: ProjectPage?, client: ClaudeClient,
-                               model: String = ClaudeModel.brain, effort: String = "medium") async throws -> ProjectPage {
+    /// The page compiled by the everyday model from the project's notes. Citations that don't match a real note are dropped.
+    public static func compile(project: String, refs: [NoteRef], previous: ProjectPage?, gateway: ModelGateway,
+                               effort: String = "medium", localOnly: Bool = false) async throws -> ProjectPage {
         let known = Set(refs.map(\.id))
         let listed = refs.sorted { $0.date > $1.date }.prefix(160)
         var lines = ["Project: \(project)", "Today: \(Date().formatted(date: .abbreviated, time: .omitted))", "", "Notes (newest first):"]
@@ -306,10 +306,10 @@ public enum ProjectPageBuilder {
         if let previous, !previous.summary.isEmpty {
             lines += ["", "Previous summary (update it, don't repeat it blindly): \(previous.summary)"]
         }
-        let brain = ClaudeClient(apiKey: client.apiKey, model: model, task: "page")
-        let out = try await brain.sendJSON(Compiled.self, system: system,
-                                           messages: [["role": "user", "content": [ClaudeClient.text(lines.joined(separator: "\n"))]]],
-                                           schema: schema, effort: effort, maxTokens: 16000, timeout: 180)
+        let request = ModelRequest(system: system, messages: [ModelMessage(role: .user, text: lines.joined(separator: "\n"))],
+                                   maxTokens: 16000, effort: effort, timeout: 180)
+        let out = try await gateway.sendJSON(Compiled.self, request, schema: schema, role: .everyday, project: project,
+                                             localOnly: localOnly, task: "page").value
         // Known ids only, each once, in order: a cite listed twice would make an action act on one note twice.
         func cites(_ ids: [String]) -> [String] {
             var seen = Set<String>()

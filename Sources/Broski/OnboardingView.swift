@@ -156,10 +156,10 @@ struct OnboardingView: View {
 
     private func saveKey() {
         guard !key.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        app.brain.setKey(key)
+        app.brain.setKey(key, for: "claude")
         key = ""
         keyStatus = "Checking…"
-        Task { keyStatus = await app.brain.verifyKey() ?? "Working" }
+        Task { keyStatus = await app.brain.check("claude") ?? "Working" }
     }
 
     private var ai: some View {
@@ -168,7 +168,7 @@ struct OnboardingView: View {
                       subtitle: "With a Claude API key I tidy up rambles, file notes into the right project, follow commands like “start a QA session”, and write reports from your screenshots. Only text and session screenshots go to Anthropic, never audio.")
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    SecureField(app.brain.hasKey ? "Key saved on this Mac" : "Paste your key: sk-ant-…", text: $key)
+                    SecureField(app.brain.hasModel ? "Key saved on this Mac" : "Paste your key: sk-ant-…", text: $key)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(saveKey)
                     Button("Save", action: saveKey)

@@ -77,16 +77,16 @@ public enum Ask {
 
     /// `briefing` carries what search can't find: what's waiting on the user, what changed, live board readings.
     public static func answer(_ question: String, index: NotesIndex, catalog: ProjectCatalog,
-                              pages: [ProjectPage], client: ClaudeClient?, localOnly: Set<String> = [],
+                              pages: [ProjectPage], gateway: ModelGateway?, localOnly: Set<String> = [],
                               briefing: String = "", limit: Int = 14) async throws -> Answer {
         let (project, found) = context(for: question, index: index, catalog: catalog, limit: limit)
         // A question naming any local-only project stays on the Mac: its own words can carry what's kept local.
         // Every one is checked, since `project` is only the first name found ("is marketroom blocked by strado?").
         let namesLocal = catalog.projects.contains { localOnly.contains($0.name) && ProjectCatalog(projects: [$0]).mentioned(in: question) != nil }
         if namesLocal || project.map({ localOnly.contains($0) }) == true { return listing(question, hits: found) }
-        // Projects kept local never reach Claude.
+        // Projects kept local never reach a model.
         let hits = found.filter { !localOnly.contains($0.ref.project ?? "") }
-        guard let client, !hits.isEmpty || project != nil || !briefing.isEmpty else {
+        guard let gateway, !hits.isEmpty || project != nil || !briefing.isEmpty else {
             return listing(question, hits: found)
         }
         let relevantProjects = Set(([project] + hits.map(\.ref.project)).compactMap { $0 }).subtracting(localOnly)
@@ -105,16 +105,15 @@ public enum Ask {
             lines.append("[\(r.id)] \(origin) · \(r.date == .distantPast ? "undated" : day.string(from: r.date)) · \(r.project ?? "Inbox") · \(r.open ? "open" : "not open") · \(r.title)"
                          + (r.body.isEmpty ? "" : " — \(r.body.replacingOccurrences(of: "\n", with: " ").prefix(r.source == nil ? 700 : 1400))"))
         }
-        let brain = ClaudeClient(apiKey: client.apiKey, model: ClaudeModel.brain, task: "ask")
-        let reply = try await brain.sendJSON(Reply.self, system: system,
-                                             messages: [["role": "user", "content": [ClaudeClient.text(lines.joined(separator: "\n"))]]],
-                                             schema: schema, effort: "medium", maxTokens: 8000, timeout: 120)
+        let request = ModelRequest(system: system, messages: [ModelMessage(role: .user, text: lines.joined(separator: "\n"))],
+                                   maxTokens: 8000, effort: "medium")
+        let reply = try await gateway.sendJSON(Reply.self, request, schema: schema, role: .everyday, project: project, task: "ask").value
         let known = Dictionary(index.refs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let (markdown, sources) = resolve(reply.answer_markdown, known: known)
         return Answer(markdown: markdown, sources: sources, usedAI: true)
     }
 
-    /// Without Claude: the best-matching notes, so the question still gets you somewhere.
+    /// Without a model: the best-matching notes, so the question still gets you somewhere.
     static func listing(_ question: String, hits: [SearchHit]) -> Answer {
         guard !hits.isEmpty else {
             return Answer(markdown: "Nothing in your notes matches that yet.", sources: [], usedAI: false)

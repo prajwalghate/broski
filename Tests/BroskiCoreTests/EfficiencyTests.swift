@@ -59,12 +59,10 @@ struct EfficiencyTests {
         #expect(UsageLog.entries(root: root).map(\.task) == ["review"])
     }
 
-    @Test("the older direct client reads what each call used, cache included, for the log")
-    func clientUsage() {
+    @Test("a Claude reply says what it used, cache included, for the log")
+    func claudeUsage() throws {
         let body = #"{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1200,"output_tokens":300,"cache_read_input_tokens":800,"cache_creation_input_tokens":50}}"#
-        #expect(ClaudeClient.usage(from: Data(body.utf8)) == ModelUsage(input: 1200, output: 300, cacheRead: 800, cacheWrite: 50))
-        #expect(ClaudeClient.usage(from: Data("nope".utf8)) == nil)
-        #expect(ClaudeClient(apiKey: "k").model == ClaudeModel.brain, "nothing lands on the priciest model by default")
+        #expect(try AnthropicConnector.parse(Data(body.utf8), status: 200).usage == ModelUsage(input: 1200, output: 300, cacheRead: 800, cacheWrite: 50))
         #expect(UsageLog.role(forModel: ClaudeModel.fast) == .fast && UsageLog.role(forModel: ClaudeModel.deep) == .deep)
         #expect(UsageLog.role(forModel: "qwen2.5:7b") == .everyday)
     }

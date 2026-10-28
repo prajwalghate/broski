@@ -152,7 +152,7 @@ struct AskView: View {
                     .frame(maxHeight: (NSScreen.main?.visibleFrame.height ?? 800) * 0.55)
                     HStack(spacing: 14) {
                         if !answer.usedAI {
-                            Text(model.library.brain.hasKey ? "Showing matching notes." : "Add a Claude key in Settings › AI for real answers.")
+                            Text(model.library.brain.hasModel ? "Showing matching notes." : "Choose a model in Settings › Models for real answers.")
                                 .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -162,8 +162,8 @@ struct AskView: View {
                             model.onRiff(model.answer?.sources.first?.project, "Q: \(model.question)\n\nBroski: \(answer.markdown)")
                         }
                         // An answer without AI is a listing, kept on the Mac (a local-only project, no key).
-                        .disabled(!model.library.brain.hasKey || !answer.usedAI)
-                        .help("Continue as a riff with Claude")
+                        .disabled(!model.library.brain.hasModel || !answer.usedAI)
+                        .help("Continue as a riff")
                     }
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .medium))

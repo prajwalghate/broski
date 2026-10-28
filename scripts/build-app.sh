@@ -9,6 +9,10 @@
 #   unset                                                                 ad-hoc signature, for you and friendly testers
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/agent/lib.sh
+use_xcode
+# The code this app is built from, so scripts/install-mac.sh installs only an app built from green code.
+code="$(code_hash)"
 
 swift build -c release --product Broski
 BIN="$(swift build -c release --show-bin-path)/Broski"
@@ -18,6 +22,7 @@ rm -rf "$APP" build/icon
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/icon
 cp "$BIN" "$APP/Contents/MacOS/Broski"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :BroskiCodeHash string $code" "$APP/Contents/Info.plist"
 
 # Local Whisper ships as a framework next to the binary; bundle it and point the app at it.
 mkdir -p "$APP/Contents/Frameworks"

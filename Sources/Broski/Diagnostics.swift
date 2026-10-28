@@ -400,7 +400,7 @@ enum Diagnostics {
     /// tokens and cost and writes the three pages next to the report for reading side by side.
     static func runPageCost(_ project: String, note: @escaping (String) -> Void) {
         _ = NSApplication.shared
-        guard let key = Secrets.get(Secrets.claudeKey) else { return note("no Claude key") }
+        guard Secrets.key(forProvider: "claude") != nil else { return note("no Claude key") }
         // On a copy of the Broski folder, so loading the library (which keeps pages in step) can't touch the real one.
         let copy = FileManager.default.temporaryDirectory.appendingPathComponent("broski-page-cost-root", isDirectory: true)
         try? FileManager.default.removeItem(at: copy)
@@ -418,8 +418,6 @@ enum Diagnostics {
         let refs = app.library.pageInputs(project)
         let previous = ProjectPage.load(project, from: app.store)
         note("\(project): \(refs.count) inputs (\(refs.filter(\.isTrackerRecord).count) from its tracker), previous page \(previous?.source.rawValue ?? "none")")
-        let used = UsageBox()
-        ClaudeClient.onUsage = { model, _, usage in used.add(model, usage) }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("broski-page-cost", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         note("pages written to \(folder.path)")
@@ -427,10 +425,14 @@ enum Diagnostics {
         Task { @MainActor in
             for (model, effort) in [(ClaudeModel.brain, "medium"), (ClaudeModel.brain, "low"), (ClaudeModel.fast, "medium")] {
                 let started = Date()
+                let before = UsageLog.entries(root: copy).count
                 do {
-                    let page = try await ProjectPageBuilder.compile(project: project, refs: refs, previous: previous,
-                                                                    client: ClaudeClient(apiKey: key), model: model, effort: effort)
-                    let usage = used.take()
+                    guard let gateway = claudeGateway(root: copy, everyday: model) else { break }
+                    let page = try await ProjectPageBuilder.compile(project: project, refs: refs, previous: previous, gateway: gateway, effort: effort)
+                    let usage = UsageLog.entries(root: copy).dropFirst(before).reduce(ModelUsage()) { sum, entry in
+                        ModelUsage(input: sum.input + entry.usage.input, output: sum.output + entry.usage.output,
+                                   cacheRead: sum.cacheRead + entry.usage.cacheRead, cacheWrite: sum.cacheWrite + entry.usage.cacheWrite)
+                    }
                     note(String(format: "%@ %@: %.1fs · in %d · out %d · $%.4f · %d sections, %d lines, %d actions",
                                 model, effort, Date().timeIntervalSince(started), usage.input, usage.output,
                                 UsageLog.cost(model: model, usage: usage), page.sections.count,
@@ -441,7 +443,6 @@ enum Diagnostics {
                     note("\(model) \(effort): failed: \(error.localizedDescription)")
                 }
             }
-            ClaudeClient.onUsage = nil
             note("done")
             done = true
         }
@@ -613,8 +614,7 @@ enum Diagnostics {
     /// The companion against Claude, on a test window (never your real screen): Help with this, a riff and its
     /// wrap-up, call notes from a sample transcript, and the call recorder hearing a spoken sentence.
     static func runCompanion(helper: String, note: @escaping (String) -> Void) {
-        guard let key = Secrets.get(Secrets.claudeKey), !key.isEmpty else { return note("no Claude key saved") }
-        let client = ClaudeClient(apiKey: key)
+        guard let gateway = claudeGateway(root: scratchRoot) else { return note("no Claude key saved") }
         var done = false
         Task { @MainActor in
             defer { done = true }
@@ -636,7 +636,7 @@ enum Diagnostics {
                 note("[help] grabbed \(jpeg.count / 1024) KB of “\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")”")
                 do {
                     let help = try await ScreenHelp.help(screenshot: jpeg, mediaType: "image/jpeg", context: ItemContext(app: "Test", window: "localhost:3000 — Console"),
-                                                         page: nil, question: nil, client: client)
+                                                         page: nil, question: nil, gateway: gateway, project: nil)
                     note(String(format: "[help · sonnet] %.1fs:\n%@", Date().timeIntervalSince(started), help))
                 } catch { note("[help] failed: \(error.localizedDescription)") }
             case .needsPermission: note("[help] needs Screen Recording")
@@ -649,12 +649,12 @@ enum Diagnostics {
             riff.turns.append(.init(role: .you, text: "I'm thinking the iPhone app should start recording the moment I press the Action Button, and save on its own when I stop. Good idea?"))
             started = Date()
             do {
-                let reply = try await riff.reply(page: nil, client: client)
+                let reply = try await riff.reply(page: nil, gateway: gateway)
                 note(String(format: "[riff · opus] %.1fs: %@", Date().timeIntervalSince(started), reply))
                 riff.turns.append(.init(role: .broski, text: reply))
                 riff.turns.append(.init(role: .you, text: "Fair. Keep the review step, but make saving one tap. Add a todo for that."))
                 started = Date()
-                let wrap = try await riff.wrapUp(client: client)
+                let wrap = try await riff.wrapUp(gateway: gateway)
                 note(String(format: "[riff wrap · sonnet] %.1fs: “%@” · %d ideas · %d decisions · %d todos: %@", Date().timeIntervalSince(started),
                             wrap.title, wrap.ideas.count, wrap.decisions.count, wrap.todos.count, wrap.todos.joined(separator: "; ")))
             } catch { note("[riff] failed: \(error.localizedDescription)") }
@@ -670,7 +670,7 @@ enum Diagnostics {
             transcript.marks = [Date().addingTimeInterval(-279)]
             started = Date()
             do {
-                let notes = try await transcript.notes(project: "strado", page: nil, client: client)
+                let notes = try await transcript.notes(project: "strado", page: nil, gateway: gateway)
                 note(String(format: "[call notes · sonnet] %.1fs: “%@” · actions: %@", Date().timeIntervalSince(started), notes.title, notes.action_items.joined(separator: "; ")))
             } catch { note("[call notes] failed: \(error.localizedDescription)") }
 
@@ -706,6 +706,19 @@ enum Diagnostics {
     /// The brain against your real notes and Claude key, without changing anything:
     /// filing with Haiku, a living page with Sonnet, and Ask Broski with citations.
     /// The local-only projects, read the same way the MCP server does: never written, closed when unreadable.
+    /// The gateway live checks use: Claude with this Mac's key (they're labelled with Claude's tiers), logging what
+    /// they use into `root` (a scratch folder, so checks never land in your own spending). Nil without a key.
+    static func claudeGateway(root: URL, everyday: String? = nil) -> ModelGateway? {
+        guard Secrets.key(forProvider: "claude") != nil else { return nil }
+        var settings = ModelSettings.defaults
+        if let everyday { settings.roles[.everyday] = ModelChoice(provider: "claude", model: everyday) }
+        return ModelGateway(settings: settings, root: root, device: "mac") { Secrets.key(forProvider: $0) }
+    }
+
+    static var scratchRoot: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("broski-diagnose-\(UUID().uuidString)", isDirectory: true)
+    }
+
     static func localOnlyProjects(_ root: URL) -> Set<String> {
         BroskiConfig.localOnly(root: root) { ItemStore(root: root).projectNames() + ProjectRegistry.load(from: root).projects.map(\.notes) }
     }
@@ -720,8 +733,7 @@ enum Diagnostics {
         let names = store.projectNames().filter { !localOnly.contains($0) }
         let catalog = ProjectCatalog(projects: names.map { Project(name: $0) })
         note("notes: \(items.count) in \(names.count) projects (\(names.joined(separator: ", "))), session entries: \(index.refs.count - items.count)")
-        guard let key = Secrets.get(Secrets.claudeKey), !key.isEmpty else { return note("no Claude key saved") }
-        let client = ClaudeClient(apiKey: key)
+        guard let gateway = claudeGateway(root: scratchRoot) else { return note("no Claude key saved") }
         let busiest = names.max { a, b in index.refs.filter { $0.project == a }.count < index.refs.filter { $0.project == b }.count } ?? names.first
         var done = false
         Task { @MainActor in
@@ -729,12 +741,12 @@ enum Diagnostics {
             do {
                 var started = Date()
                 let filed = try await Interpreter.interpret(.init(text: "in the \(busiest ?? "broski") project add a bug the save button does nothing on the second click",
-                                                                 spoken: true, projects: names, activeSession: nil, context: ItemContext(), attachmentCount: 0), with: client)
+                                                                 spoken: true, projects: names, activeSession: nil, context: ItemContext(), attachmentCount: 0), gateway: gateway)
                 note(String(format: "[filing · haiku] %.1fs → %@ · %@ · “%@”", Date().timeIntervalSince(started), filed.project, filed.kind, filed.title))
                 guard let busiest else { return }
                 let refs = index.refs.filter { $0.project == busiest }
                 started = Date()
-                let page = try await ProjectPageBuilder.compile(project: busiest, refs: refs, previous: nil, client: client)
+                let page = try await ProjectPageBuilder.compile(project: busiest, refs: refs, previous: nil, gateway: gateway)
                 let cited = page.allCitations
                 let valid = cited.filter { id in refs.contains { $0.id == id } }.count
                 note(String(format: "[page · sonnet] %@ from %d notes in %.1fs, %d citations (%d valid), %d actions",
@@ -742,7 +754,7 @@ enum Diagnostics {
                 note(page.render().components(separatedBy: "\n---\n").last ?? "")
                 started = Date()
                 let question = "What's still open on \(busiest) and what should I do first?"
-                let answer = try await Ask.answer(question, index: index, catalog: catalog, pages: [page], client: client, localOnly: localOnly)
+                let answer = try await Ask.answer(question, index: index, catalog: catalog, pages: [page], gateway: gateway, localOnly: localOnly)
                 note(String(format: "[ask · sonnet] %.1fs, %d sources: %@", Date().timeIntervalSince(started), answer.sources.count, question))
                 note(answer.markdown)
             } catch {

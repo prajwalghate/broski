@@ -1,4 +1,5 @@
 import AppKit
+import BroskiCore
 
 @main
 enum BroskiApp {
@@ -38,6 +39,14 @@ enum BroskiApp {
         }
         if let i = args.firstIndex(of: "--chat-check"), i + 1 < args.count {
             _exit(ChatCheck.run(report: URL(fileURLWithPath: args[i + 1])) ? 0 : 1)
+        }
+        // scripts/install-mac.sh: can this build read the real Broski folder? Reads only; the report holds counts.
+        if let i = args.firstIndex(of: "--check-folder"), i + 1 < args.count {
+            let report = FolderCheck.run(root: AppModel.notesRoot)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try? encoder.encode(report).write(to: URL(fileURLWithPath: args[i + 1]))
+            _exit(report.ok ? 0 : 1)
         }
         if let i = args.firstIndex(of: "--diagnose"), i + 2 < args.count {
             Diagnostics.run(audio: URL(fileURLWithPath: args[i + 1]), report: URL(fileURLWithPath: args[i + 2]))

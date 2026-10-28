@@ -168,17 +168,17 @@ final class CallModel: ObservableObject {
         // A call picked for, or talking about, a local-only project gets plain notes: the transcript stays on the Mac.
         let localOnly = LocalOnly.touches(transcript.text, projects: [project], localOnly: Set(BroskiUI.app?.config.localOnlyProjects ?? []),
                                           catalog: library.catalog)
-        guard let client = brain.client, !localOnly else {
+        guard let gateway = brain.gateway, !localOnly else {
             notes = CallTranscript.Notes(title: "Call, \(transcript.started.formatted(date: .abbreviated, time: .shortened))",
                                          summary_markdown: "", decisions: [], action_items: [], follow_ups: [])
             return phase = .done
         }
         do {
-            notes = try await transcript.notes(project: project, page: project.flatMap { library.pages[$0] }, client: client)
+            notes = try await transcript.notes(project: project, page: project.flatMap { library.pages[$0] }, gateway: gateway)
             phase = .done
         } catch {
             notes = CallTranscript.Notes(title: "Call, \(transcript.started.formatted(date: .abbreviated, time: .shortened))",
-                                         summary_markdown: "Claude couldn't write the notes (\(error.localizedDescription)); the transcript is below.",
+                                         summary_markdown: "The model couldn't write the notes (\(error.localizedDescription)); the transcript is below.",
                                          decisions: [], action_items: [], follow_ups: [])
             phase = .done
         }
@@ -377,7 +377,7 @@ struct CallView: View {
             case .writing:
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
-                    Text(model.pending > 0 ? "Finishing the transcript (\(model.pending) left)…" : "Claude is writing the notes…")
+                    Text(model.pending > 0 ? "Finishing the transcript (\(model.pending) left)…" : "Writing the notes…")
                 }
                 .padding(.vertical, 30)
             case .done: result

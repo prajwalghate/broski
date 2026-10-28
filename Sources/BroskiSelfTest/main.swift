@@ -416,11 +416,11 @@ do {
     check(options.projects == ["strado"] && options.bugs, "check-in options: a bad value falls back on its own")
 
     // Claude replies cut off at max_tokens are marked, not passed off as complete.
-    let cut = try ClaudeClient.parse(Data(#"{"stop_reason":"max_tokens","content":[{"type":"text","text":"Half an ans"}]}"#.utf8), status: 200)
+    let cut = try AnthropicConnector.parse(Data(#"{"stop_reason":"max_tokens","content":[{"type":"text","text":"Half an ans"}]}"#.utf8), status: 200)
     check(cut.truncated && cut.text == "Half an ans", "max_tokens marks the reply truncated")
     var thinkingOnly = false
-    do { _ = try ClaudeClient.parse(Data(#"{"stop_reason":"max_tokens","content":[{"type":"thinking","thinking":"…"}]}"#.utf8), status: 200) }
-    catch ClaudeClient.Failure.truncated { thinkingOnly = true }
+    do { _ = try AnthropicConnector.parse(Data(#"{"stop_reason":"max_tokens","content":[{"type":"thinking","thinking":"…"}]}"#.utf8), status: 200) }
+    catch ModelFailure.truncated { thinkingOnly = true }
     check(thinkingOnly, "cut off while thinking says truncated, not empty")
 
     // Without AI, only a whole "wrap up" ends a session; an observation that starts with those words doesn't.

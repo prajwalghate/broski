@@ -227,13 +227,13 @@ final class Companion: ObservableObject {
         // Read what you're looking at before any Broski window appears.
         let context = ContextCapture.snapshot(includeBrowser: config.captureBrowserPage, includeAccessibility: config.captureWindowDetails)
         let project = CompanionPlanner.project(for: context, catalog: library.catalog, items: library.allItems)
-        // A local-only project's window (its screenshot, title, URL and selection) never goes to Claude.
+        // A local-only project's window (its screenshot, title, URL and selection) never goes to a cloud model.
         let seen = [context.window, context.url, context.selection].compactMap { $0 }.joined(separator: "\n")
         if LocalOnly.touches(seen, projects: [project], localOnly: Set(config.localOnlyProjects), catalog: library.catalog) {
-            show(.help(Help(state: .failed("\(project ?? "This project") is local only, so Help won't send this window to Claude."), project: project, context: context)), for: nil)
+            show(.help(Help(state: .failed("\(project ?? "This project") is local only, so Help won't send this window to a cloud model."), project: project, context: context)), for: nil)
             return
         }
-        guard let client = brain.client else {
+        guard let gateway = brain.gateway else {
             show(.help(Help(state: .needsKey, project: project, context: context)), for: nil)
             return
         }
@@ -251,7 +251,7 @@ final class Companion: ObservableObject {
                 let page = project.flatMap { library.pages[$0] }
                 do {
                     let text = try await ScreenHelp.help(screenshot: jpeg, mediaType: "image/jpeg", context: context,
-                                                         page: page, question: nil, client: client)
+                                                         page: page, question: nil, gateway: gateway, project: project)
                     let known = Dictionary(library.index.refs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                     let (markdown, sources) = Ask.resolve(text, known: known)
                     update(Help(state: .answer(markdown, sources), project: project, context: context, screenshot: shot))
@@ -371,7 +371,7 @@ struct PillView: View {
                 }
                 pillButton("sparkle.magnifyingglass", "Ask Broski (\(BroskiUI.app?.askLabel ?? "⌥⇧A"))") { companion.onAsk(nil) }
                 pillButton("eye", "Help with this: Broski looks at your screen (\(BroskiUI.app?.helpLabel ?? "⌥⇧H"))") { companion.helpWithThis() }
-                pillButton("bubble.left.and.text.bubble.right", "Riff: think out loud with Claude") { companion.onRiff(nil, nil) }
+                pillButton("bubble.left.and.text.bubble.right", "Riff: think out loud") { companion.onRiff(nil, nil) }
                 pillButton(companion.calling ? "phone.down.fill" : "phone", companion.calling ? "Stop call notes" : "Take notes on a call") { companion.onCall() }
                 pillButton("sun.max", "Check-in now") { companion.checkInNow() }
             }
@@ -461,12 +461,12 @@ struct CheckInCard: View {
                 }
             }
             HStack {
-                Button("Plan my day with Claude") {
+                Button("Plan my day") {
                     guard let plan = plan else { return }
                     companion.onRiff(nil, plan)
                     companion.close()
                 }
-                .disabled(plan == nil || !companion.brain.hasKey)
+                .disabled(plan == nil || !companion.brain.hasModel)
                 Spacer()
                 FeedbackRow(companion: companion, neverLabel: "Turn off", neverHelp: "Stop the check-in (turn it back on in Settings)")
             }
@@ -531,7 +531,7 @@ struct HelpCard: View {
                     Button("Open Settings") { Screenshot.openScreenRecordingSettings() }
                 }
             case .needsKey:
-                Text("Add a Claude key in Broski Settings › AI to use Help with this.").font(.system(size: 12))
+                Text("Choose a model that reads images in Broski Settings › Models to use Help with this.").font(.system(size: 12))
             }
         }
     }

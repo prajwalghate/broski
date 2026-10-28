@@ -1,31 +1,44 @@
 import AppKit
 import BroskiCore
 
-/// Decides what a capture means. Uses Claude when an API key is set; otherwise (or if Claude
-/// can't be reached) falls back to Broski's built-in phrase rules, so capturing never blocks on the network.
+/// Decides what a capture means, and gives the app's features their way to a model. Uses the model for fast work
+/// when one is set up (any provider: see Settings › Models); otherwise (or if it can't be reached) Broski's built-in
+/// phrase rules, so capturing never blocks on the network.
 @MainActor
 final class Brain: ObservableObject {
-    @Published private(set) var hasKey = Secrets.get(Secrets.claudeKey)?.isEmpty == false
+    /// Some role has a model that can answer now (a cloud provider with its key, a model on this Mac, Apple's).
+    @Published private(set) var hasModel = false
     @Published private(set) var lastProblem: String?
-    /// Projects whose notes never go to Claude.
+    /// Projects whose notes never go to a cloud model.
     var localOnly: () -> Set<String> = { [] }
-
-    var client: ClaudeClient? {
-        guard let key = Secrets.get(Secrets.claudeKey), !key.isEmpty else { return nil }
-        return ClaudeClient(apiKey: key)
+    /// The gateway every model call goes through (the app supplies it: settings from config.json, keys on this Mac).
+    var makeGateway: () -> ModelGateway? = { nil } {
+        didSet { refresh() }
     }
 
-    func setKey(_ key: String?) {
-        let saved = Secrets.set(key?.trimmingCharacters(in: .whitespacesAndNewlines), for: Secrets.claudeKey)
-        hasKey = client != nil
+    /// The gateway, when there's a model to talk to.
+    var gateway: ModelGateway? { hasModel ? makeGateway() : nil }
+
+    /// Re-reads whether a model is ready (after a key, a provider or a role changes).
+    func refresh() {
+        guard let settings = makeGateway()?.settings else { return hasModel = false }
+        hasModel = ModelSetup.ready(settings, hasKey: { Secrets.key(forProvider: $0) != nil }, appleAvailable: ModelsSettings.appleAvailable)
+    }
+
+    /// Saves a provider's key on this Mac (nil removes it). False when the secrets file couldn't be written.
+    @discardableResult
+    func setKey(_ key: String?, for provider: String) -> Bool {
+        let saved = Secrets.set(key?.trimmingCharacters(in: .whitespacesAndNewlines), for: Secrets.keyName(forProvider: provider))
+        refresh()
         lastProblem = saved ? nil : "Couldn't save the key to \(Secrets.file.path). Check that folder's permissions."
+        return saved
     }
 
-    /// Nil when the key works; otherwise what went wrong.
-    func verifyKey() async -> String? {
-        guard let client else { return "No key saved" }
+    /// Nil when the provider answers; otherwise what went wrong, in words a person can act on.
+    func check(_ providerID: String) async -> String? {
+        guard let provider = makeGateway()?.settings.provider(providerID) else { return "That provider isn't set up." }
         do {
-            try await client.verify()
+            _ = try await ProviderCheck.run(provider, key: Secrets.key(forProvider: providerID))
             lastProblem = nil
             return nil
         } catch {
@@ -51,24 +64,24 @@ final class Brain: ObservableObject {
         if LocalOnly.touches(seen, projects: [ruled.project, pinned, activeSession?.project], localOnly: blocked, catalog: catalog) {
             return Result(interpretation: ruled, usedAI: false)
         }
-        if let client {
+        if let gateway {
             let request = Interpreter.Request(
-                // Claude isn't told local-only projects exist, so it can't file anything into them.
+                // The model isn't told local-only projects exist, so it can't file anything into them.
                 text: text, spoken: spoken, projects: catalog.projects.map(\.name).filter { !blocked.contains($0) },
                 activeSession: activeSession.map { "\($0.kind.label) “\($0.title)” for \($0.project ?? "the inbox")" },
                 context: context, attachmentCount: attachmentCount
             )
             do {
-                var result = try await Interpreter.interpret(request, with: client)
+                var result = try await Interpreter.interpret(request, gateway: gateway)
                 result.project = resolveProject(result.project, catalog: catalog)
                 lastProblem = nil
                 return Result(interpretation: result, usedAI: true)
             } catch where Self.isCancellation(error) {
-                // You kept typing, so this guess is out of date. Not a problem with Claude.
+                // You kept typing, so this guess is out of date. Not a problem with the model.
                 return Result(interpretation: Self.rules(text, catalog: catalog, activeSession: activeSession), usedAI: false)
             } catch {
                 lastProblem = error.localizedDescription
-                Log.info("Claude unavailable, using rules: \(error.localizedDescription)")
+                Log.info("Model unavailable, using rules: \(error.localizedDescription)")
             }
         }
         return Result(interpretation: ruled, usedAI: false)
@@ -80,25 +93,23 @@ final class Brain: ObservableObject {
         return (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled
     }
 
-    /// Claude sometimes returns a slightly different spelling; snap it to the real project name.
+    /// A model sometimes returns a slightly different spelling; snap it to the real project name.
     private func resolveProject(_ name: String, catalog: ProjectCatalog) -> String {
         guard !name.isEmpty else { return "" }
         return catalog.match(name)?.name ?? name
     }
 
     func report(for session: Session) async throws -> SessionReport {
-        guard let client else { throw ClaudeClient.Failure.http(401, "no key") }
-        // A second guard behind Library.writeReport: a local-only session's entries and screenshots stay here.
-        if let project = session.project, localOnly().contains(project) {
-            throw ClaudeClient.Failure.http(403, "\(project) is local only")
-        }
+        guard let gateway else { throw ModelFailure.unavailable("Choose a model in Settings › Models to write reports.") }
         var images: [String: (data: Data, mediaType: String)] = [:]
         for path in session.entries.flatMap(\.attachments).prefix(20) {
             if let image = NSImage(contentsOf: session.folder.appendingPathComponent(path)), let jpeg = image.jpegData(maxSide: 1568) {
                 images[path] = (jpeg, "image/jpeg")
             }
         }
-        return try await ReportWriter.write(session, images: images, with: client)
+        // A local-only session's entries and screenshots go only to a model on this Mac (or nowhere).
+        let local = session.project.map { localOnly().contains($0) } ?? false
+        return try await ReportWriter.write(session, images: images, gateway: gateway, localOnly: local)
     }
 
     // MARK: Without AI

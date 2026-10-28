@@ -36,22 +36,22 @@ struct FirstRunTests {
         #expect(!later.system.contains("first conversation"))
     }
 
-    @Test("ready to talk: a Claude key, any OpenAI-compatible server, or Apple's model where it's available")
+    @Test("ready to talk: a cloud provider with its key, a server that needs none, or Apple's model where it's available")
     func ready() {
         let claude = ModelSettings.defaults
-        #expect(!ModelSetup.ready(claude, claudeKey: false, appleAvailable: true))
-        #expect(ModelSetup.ready(claude, claudeKey: true, appleAvailable: false))
+        #expect(!ModelSetup.ready(claude, hasKey: { _ in false }, appleAvailable: true))
+        #expect(ModelSetup.ready(claude, hasKey: { _ in true }, appleAvailable: false))
 
         var local = ModelSettings(providers: [ModelProvider(id: "ollama", kind: .openAICompatible, baseURL: "http://localhost:11434/v1", local: true)],
                                   roles: [.everyday: ModelChoice(provider: "ollama", model: "qwen2.5:7b")])
-        #expect(ModelSetup.ready(local, claudeKey: false, appleAvailable: false))
+        #expect(ModelSetup.ready(local, hasKey: { _ in false }, appleAvailable: false))
         local.roles = [:]
-        #expect(!ModelSetup.ready(local, claudeKey: false, appleAvailable: false), "a server no role uses can't answer")
+        #expect(!ModelSetup.ready(local, hasKey: { _ in false }, appleAvailable: false), "a server no role uses can't answer")
 
         let apple = ModelSetup.appleOnDevice(claude)
         #expect(apple.provider("apple")?.kind == .appleOnDevice)
         #expect(ModelRole.allCases.allSatisfy { apple.roles[$0]?.provider == "apple" && apple.localRoles[$0]?.provider == "apple" })
-        #expect(ModelSetup.ready(apple, claudeKey: false, appleAvailable: true))
-        #expect(!ModelSetup.ready(apple, claudeKey: false, appleAvailable: false))
+        #expect(ModelSetup.ready(apple, hasKey: { _ in false }, appleAvailable: true))
+        #expect(!ModelSetup.ready(apple, hasKey: { _ in false }, appleAvailable: false))
     }
 }

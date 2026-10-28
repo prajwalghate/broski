@@ -619,7 +619,7 @@ private struct AISettings: View {
 
     private func save() {
         guard !key.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        brain.setKey(key)
+        brain.setKey(key, for: "claude")
         key = ""
         check()
     }
@@ -629,18 +629,18 @@ private struct AISettings: View {
             Section {
                 LabeledContent("Claude API key") {
                     HStack {
-                        SecureField(brain.hasKey ? "Saved on this Mac" : "sk-ant-…", text: $key)
+                        SecureField(brain.hasModel ? "Saved on this Mac" : "sk-ant-…", text: $key)
                             .frame(width: 240)
                             .onSubmit(save)
                         Button("Save", action: save)
                         .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
-                if brain.hasKey {
+                if brain.hasModel {
                     HStack {
                         Button(checking ? "Checking…" : "Test the key") { check() }.disabled(checking)
                         Button("Remove key", role: .destructive) {
-                            brain.setKey(nil)
+                            brain.setKey(nil, for: "claude")
                             status = nil
                         }
                         Spacer()
@@ -779,7 +779,7 @@ private struct AISettings: View {
     private func check() {
         checking = true
         Task {
-            let problem = await brain.verifyKey()
+            let problem = await brain.check("claude")
             status = problem ?? "Working"
             checking = false
         }
@@ -905,7 +905,7 @@ private struct CompanionSettings: View {
 
             Section {
                 Toggle(isOn: app.binding(\.autoCompilePages)) {
-                    Text("Keep project pages up to date with Claude")
+                    Text("Keep project pages up to date with your model")
                     Text("Rewrites a project's page a little after its notes change. Without this, pages are built from your notes by Broski's rules.")
                 }
                 ForEach(app.library.projectNames, id: \.self) { name in
@@ -919,7 +919,7 @@ private struct CompanionSettings: View {
             } header: {
                 Text("Living pages and privacy")
             } footer: {
-                Text("A local-only project's notes never go to Claude: filing uses the rules, its page is built on this Mac, and it's left out of Ask, riffs and help.").frame(maxWidth: .infinity, alignment: .leading)
+                Text("A local-only project's notes never go to a cloud model. In the conversation only a model on this Mac answers about it; filing, its page and Ask use Broski's built-in rules, and Help with this skips its windows.").frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .formStyle(.grouped)

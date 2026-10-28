@@ -56,13 +56,13 @@ struct ProjectOverview: View {
         HStack(spacing: 8) {
             if compiling {
                 ProgressView().controlSize(.small)
-                Text("Claude is updating this page…")
+                Text("Updating this page…")
             } else if let page {
                 Image(systemName: page.source == .claude ? "sparkles" : "list.bullet.rectangle")
                     .foregroundStyle(page.source == .claude ? Brand.purple : .secondary)
                 Text(page.source == .claude
-                     ? "Written by Claude from your notes · \(page.compiled.formatted(.relative(presentation: .named)))"
-                     : (library.brain.hasKey ? "Built from your notes · Claude will refine it shortly" : "Built from your notes · add a Claude key for the full page"))
+                     ? "Written from your notes · \(page.compiled.formatted(.relative(presentation: .named)))"
+                     : (library.brain.hasModel ? "Built from your notes · your model will refine it shortly" : "Built from your notes · choose a model in Settings › Models for the full page"))
             }
             if let problem = library.pageProblem, !compiling {
                 Text("· \(problem)").foregroundStyle(.orange).lineLimit(1)
@@ -71,12 +71,12 @@ struct ProjectOverview: View {
             Button {
                 BroskiUI.app?.showRiff(project: project, opening: nil)
             } label: { Label("Riff", systemImage: "bubble.left.and.text.bubble.right") }
-                .help("Think out loud about \(project) with Claude")
+                .help("Think out loud about \(project)")
             Button {
                 library.compilePage(project)
             } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                .disabled(compiling || !library.brain.hasKey)
-                .help(library.brain.hasKey ? "Rewrite the page from your notes now" : "Add a Claude key in Settings › AI")
+                .disabled(compiling || !library.brain.hasModel)
+                .help(library.brain.hasModel ? "Rewrite the page from your notes now" : "Choose a model in Settings › Models")
         }
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
