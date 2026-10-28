@@ -513,31 +513,27 @@ final class HomeModel: ObservableObject {
     /// Asks the fast model what in the last few turns is worth saving; shows a card when there's something.
     func suggestSave(force: Bool) {
         // The model isn't told local-only projects exist, so it can't file anything into them.
-        let known = library.projectNames.filter { !localOnlyProjects.contains($0) }
-        let standing = project.map { DecisionLog.current(root: root, project: $0) } ?? []
-        guard let request = SaveCard.request(turns: turns, projects: known, decisions: standing, project: project) else {
-            if force { problem = "Nothing to save yet." }
-            return
-        }
-        let localOnly = touchesLocalOnly(request.messages.map(\.text).joined())
+        let review = ConversationReview(stored: turns, privateTurns: privateTurns, isPrivate: isPrivate, project: project,
+                                        projects: library.projectNames.filter { !localOnlyProjects.contains($0) },
+                                        decisions: project.map { DecisionLog.current(root: root, project: $0) } ?? [],
+                                        localOnly: localOnlyProjects, catalog: library.catalog)
         let gateway = gateway
-        let project = project
         Task {
             do {
-                let (reply, _) = try await gateway.send(request, role: .fast, project: project, localOnly: localOnly, task: "review")
-                guard let review = SaveCard.review(reply.text, catalog: library.catalog, decisions: standing) else {
-                    if force { problem = "Nothing in the last few turns to save." }
+                guard let offer = try await review.run(gateway: gateway) else {
+                    if force { problem = "Nothing to save yet." }
                     return
                 }
+                // Private mode went on or off, or started again, while it read: it's about another conversation.
+                guard review.isCurrent(isPrivate: isPrivate, privateTurns: privateTurns) else { return }
                 // A conversation with no project yet is filed under the one it turned out to be about.
-                if self.project == nil, let found = review.project, !isPrivate {
+                if self.project == nil, let found = offer.project {
                     self.project = found
-                    add(Turn(device: "mac", speaker: .topic, text: found, project: found, topic: review.topic))
+                    add(Turn(device: "mac", speaker: .topic, text: found, project: found, topic: offer.topic))
                 }
-                if let topic = review.topic { self.topic = topic }
-                if let proposed = review.newProject, proposal == nil, !isPrivate { proposal = proposed }
-                if var found = review.card {
-                    if found.project == nil { found.project = self.project }
+                if let topic = offer.topic { self.topic = topic }
+                if let proposed = offer.newProject, proposal == nil { proposal = proposed }
+                if let found = offer.card {
                     card = found
                 } else if force {
                     problem = "Nothing in the last few turns to save."
@@ -551,8 +547,9 @@ final class HomeModel: ObservableObject {
     func saveCard() {
         guard let card else { return }
         do {
+            // A private conversation isn't kept, so there's no turn to link back to.
             let saved = try SaveCard.save(card, store: library.store, root: root, device: "mac",
-                                          turn: turns.last(where: { $0.speaker == .you })?.id)
+                                          turn: isPrivate ? nil : turns.last(where: { $0.speaker == .you })?.id)
             library.reload()
             add(Turn(device: "mac", speaker: .note, text: saved, project: card.project))
             self.card = nil
@@ -668,6 +665,8 @@ final class HomeModel: ObservableObject {
         privateTurns = []
         isPrivate = false
         askKeep = false
+        // What it offered to save goes with it.
+        card = nil
     }
 
     // MARK: Voice
