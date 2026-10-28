@@ -4,6 +4,8 @@ All notable changes to Broski are in this file. The format follows [Keep a Chang
 
 ## Mac 0.11.2, iPhone 0.7.1 - 2026-10-28
 
+The first public release. Broski is a companion you talk to about your projects: press ⌥⇧B, talk or type, and it remembers what you've told it, thinks with you, and saves decisions and todos only when you tap Save. It works with the AI you choose (Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, a model on your Mac, or Apple's on-device model), and your notes are plain files you own. It needs macOS 14 or later on Apple silicon. See the README for what it does and [Getting started](docs/getting-started.md) for the first run; the entries below say what changed in each version.
+
 ### Fixed
 
 - "Save that" in private mode looks over the private conversation alone. It used to read your kept conversation, so it could offer to save things from the wrong one. Nothing from a private conversation is kept unless you tap Save: its card goes to the inbox, it doesn't change the conversation's project or topic, and letting the conversation go clears the card.
