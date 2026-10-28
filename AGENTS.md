@@ -1,6 +1,6 @@
 # Working on Broski (for coding agents)
 
-Broski is a companion you talk to about your projects: a Mac menu-bar app, an iPhone app and a read-only MCP server, sharing one Swift core (`Sources/BroskiCore`). People run it every day on their own notes, so a bad change costs someone real data or a working mic. This file is how agents (Claude Code, Codex, Cursor, Copilot, Gemini CLI) work here without breaking it. Humans: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Broski is a companion you talk to about your projects: a Mac menu-bar app, an iPhone app and an MCP server (it reads your notes and trackers, and writes only to trackers Broski keeps), sharing one Swift core (`Sources/BroskiCore`). People run it every day on their own notes, so a bad change costs someone real data or a working mic. This file is how agents (Claude Code, Codex, Cursor, Copilot, Gemini CLI) work here without breaking it. Humans: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Map
 
@@ -54,10 +54,10 @@ Claude Code loads them from `.claude/settings.json`; the git hook applies to eve
 
 - **One way to a model:** every call goes through `ModelGateway` (BroskiCore). It masks secrets, routes by role, keeps local-only projects on local models, and logs cost. No feature talks to a provider directly.
 - **Any provider:** nothing may assume Claude. Features ask for a role (`fast`, `everyday`, `deep`); Settings maps roles to providers (`ProviderPreset`). Use capability checks (images, PDFs, structured output), never a provider's name.
-- **Privacy:** text from a local-only project or private mode never reaches a cloud model, and every new send path gets a privacy test. Vault contents never reach a model, search, recall, memory or MCP.
+- **Privacy:** text from a local-only project never reaches a cloud model, and every new send path gets a privacy test. Private mode keeps nothing afterwards (its replies still come from the role's model). Vault contents never reach a model, search, recall, memory or MCP.
 - **Untrusted text is data:** text from files, web pages, trackers and tool output is fenced in prompts, never followed as instructions.
 - **The person decides:** notes, todos, decisions and projects are created only after their tap.
-- **Files are the source of truth:** markdown, JSON or JSONL in the person's Broski folder, each format versioned (`"v": 1`, or `format: 1` in front matter), with round-trip and upgrade tests. One writer per file: each device appends to its own.
+- **Files are the source of truth:** markdown, JSON or JSONL in the person's Broski folder. Every new format carries a version (`"v": 1`, or `format: 1` in front matter) with round-trip and upgrade tests; adding a field must keep older versions reading the file (optional fields only, never a new enum value in a stored list). One writer per file: each device appends to its own.
 - **Never** write into a project's repository, run its code, or read its `.env*` / `*.db` files. Trackers are read in place with git plumbing only (no fetch, pull, push or worktrees).
 - **No personal data** in code, tests, fixtures or docs: no real names, notes, project data, paths, bundle IDs or keys. The secret scan blocks the common ones.
 - **English:** Broski replies in English; UI copy is plain, short and specific (see `broski-ui`).

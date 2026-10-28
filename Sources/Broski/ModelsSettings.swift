@@ -2,11 +2,15 @@ import AppKit
 import BroskiCore
 import SwiftUI
 
-/// Settings › Models: which model does what, the models you've added (a local server, OpenRouter, Apple's on-device
-/// model), a daily limit, and what it all cost. Saved in config.json; keys stay in this Mac's secrets file.
+/// Settings › Models: the providers you've connected (any preset, or a server added by hand), which model does what,
+/// a daily limit, and what it all cost. Saved in config.json; keys stay in this Mac's secrets file.
 struct ModelsSettings: View {
     @ObservedObject var app: AppModel
     @State private var adding = false
+    /// The provider whose key is being changed, when the chooser opens for it.
+    @State private var changing: ProviderPreset?
+    /// Set before opening Settings from "Choose a model" in the conversation: the chooser opens straight away.
+    static var openChooserNext = false
     @State private var checks: [String: String] = [:]
     @State private var found: [String: [String]] = [:]
     @State private var summary = UsageLog.Summary.none
@@ -27,13 +31,35 @@ struct ModelsSettings: View {
     var body: some View {
         Form {
             Section {
+                ForEach(settings.providers) { provider in
+                    providerRow(provider)
+                    if provider.kind == .openAICompatible && !(ProviderPreset.of(provider)?.needsKey ?? false) {
+                        Toggle("\(provider.displayName)'s models read images", isOn: Binding(
+                            get: { provider.capabilities.contains(.images) },
+                            set: { on in change { s in
+                                guard let i = s.providers.firstIndex(where: { $0.id == provider.id }) else { return }
+                                if on { s.providers[i].capabilities.insert(.images) } else { s.providers[i].capabilities.remove(.images) }
+                            } }))
+                        .font(.system(size: 12))
+                    }
+                }
+                Button("Add a provider…") {
+                    changing = nil
+                    adding = true
+                }
+            } header: {
+                Text("Providers")
+            } footer: {
+                Text("Keys stay on this Mac. Anything that speaks the OpenAI API works too: llama.cpp, vLLM, LiteLLM, a company gateway.")
+            }
+            Section {
                 roleRow(.fast, local: false)
                 roleRow(.everyday, local: false)
                 roleRow(.deep, local: false)
             } header: {
                 Text("Who does what")
             } footer: {
-                Text("Fast: filing, titles, save cards. Everyday: the conversation and project pages. Deep: “think harder”, reflection, setting up a project.")
+                Text("Fast: filing notes, titles, save cards. Everyday: the conversation, Ask, project pages, reports, call notes and Help with this. Deep: “think harder”, riffs, reflection, setting up a project.")
             }
             Section {
                 if hasLocal {
@@ -48,22 +74,6 @@ struct ModelsSettings: View {
                 Text("Local-only projects")
             } footer: {
                 Text(hasLocal ? "These never leave this Mac. A role with none uses another role's local model." : "")
-            }
-            Section {
-                ForEach(settings.providers) { provider in providerRow(provider) }
-                if adding {
-                    AddProviderForm(settings: settings) { provider, key in
-                        if let key, !key.isEmpty { Secrets.set(key, for: "model.\(provider.id)") }
-                        change { $0.add(provider) }
-                        adding = false
-                    } cancel: { adding = false }
-                } else {
-                    Button("Add a model…") { adding = true }
-                }
-            } header: {
-                Text("Models")
-            } footer: {
-                Text("Anything that speaks the OpenAI API works: Ollama (http://localhost:11434/v1), LM Studio (http://localhost:1234/v1), llama.cpp, vLLM, OpenRouter. Keys stay on this Mac.")
             }
             Section {
                 Toggle("Read links I share", isOn: app.binding(\.readLinks))
@@ -105,7 +115,14 @@ struct ModelsSettings: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { summary = UsageLog.summary(UsageLog.entries(root: app.root)) }
+        .onAppear {
+            summary = UsageLog.summary(UsageLog.entries(root: app.root))
+            if Self.openChooserNext {
+                Self.openChooserNext = false
+                adding = true
+            }
+        }
+        .sheet(isPresented: $adding) { ProviderChooserSheet(app: app, preset: changing) }
     }
 
     static func taskName(_ task: String) -> String {
@@ -145,7 +162,7 @@ struct ModelsSettings: View {
                     }
                 })) {
                     Text(local ? "Another role's" : "None").tag("")
-                    ForEach(choices) { Text($0.id).tag($0.id) }
+                    ForEach(choices) { Text($0.displayName).tag($0.id) }
                 }
                 .labelsHidden()
                 .frame(width: 130)
@@ -155,12 +172,10 @@ struct ModelsSettings: View {
     }
 
     private func defaultModel(_ provider: String, role: ModelRole) -> String {
-        guard let kind = settings.provider(provider)?.kind else { return "" }
-        switch kind {
-        case .anthropic: return ModelSettings.defaults.roles[role]?.model ?? ClaudeModel.brain
-        case .appleOnDevice: return "default"
-        case .openAICompatible: return found[provider]?.first ?? settings.roles.values.first { $0.provider == provider }?.model ?? "model"
-        }
+        guard let chosen = settings.provider(provider) else { return "" }
+        if chosen.kind == .appleOnDevice { return "default" }
+        return ProviderPreset.of(chosen)?.pick(role, from: found[provider] ?? [])
+            ?? settings.roles.values.first { $0.provider == provider }?.model ?? found[provider]?.first ?? "model"
     }
 
     @ViewBuilder private func modelField(_ role: ModelRole, local: Bool, current: ModelChoice, provider: ModelProvider) -> some View {
@@ -197,19 +212,26 @@ struct ModelsSettings: View {
             HStack(spacing: 8) {
                 if let check = checks[provider.id] {
                     Text(check).font(.system(size: 11)).foregroundStyle(check.hasPrefix("Working") ? Color.green : Color.secondary)
-                        .lineLimit(2).frame(maxWidth: 200, alignment: .trailing)
+                        .lineLimit(2).frame(maxWidth: 220, alignment: .trailing)
                 }
                 Button("Test") { test(provider) }
-                if provider.id != "claude" {
-                    Button("Remove", role: .destructive) {
-                        Secrets.set(nil, for: "model.\(provider.id)")
-                        change { $0.remove(provider.id) }
+                if provider.needsKey, let preset = ProviderPreset.of(provider) {
+                    Button("Key…") {
+                        changing = preset
+                        adding = true
                     }
+                    .help("Paste a new \(provider.displayName) key")
+                }
+                Button("Remove", role: .destructive) {
+                    Secrets.set(nil, for: Secrets.keyName(forProvider: provider.id))
+                    change { $0.remove(provider.id) }
+                    app.brain.refresh()
                 }
             }
         } label: {
             HStack(spacing: 6) {
-                Text(provider.id)
+                ProviderIcon(preset: ProviderPreset.of(provider)?.id)
+                Text(provider.displayName)
                 if provider.isLocal {
                     Text("ON THIS MAC").font(.system(size: 9, weight: .semibold)).foregroundStyle(.green)
                         .padding(.horizontal, 5).padding(.vertical, 2)
@@ -222,12 +244,15 @@ struct ModelsSettings: View {
 
     private func detail(_ provider: ModelProvider) -> String {
         switch provider.kind {
-        case .anthropic: return "Claude. The key is in Settings › AI."
-        case .appleOnDevice: return Self.appleAvailable ? "Apple's on-device model. Free, private, text only." : "Apple's on-device model needs macOS 26 with Apple Intelligence on."
-        case .openAICompatible:
+        case .appleOnDevice:
+            return Self.appleAvailable ? "Free and private, text only." : "Needs macOS 26 with Apple Intelligence on."
+        case .anthropic, .openAICompatible:
             let reads = [provider.capabilities.contains(.images) ? "images" : nil, provider.capabilities.contains(.pdfs) ? "PDFs" : nil].compactMap { $0 }
-            let key = Secrets.get("model.\(provider.id)") == nil ? "no key" : "key saved"
-            return "\(provider.baseURL ?? "no address") · \(key)\(reads.isEmpty ? " · text only" : " · reads \(reads.joined(separator: " and "))")"
+            var parts: [String] = []
+            if ProviderPreset.of(provider)?.id == ProviderPreset.custom.id || provider.isLocal { parts.append(provider.baseURL ?? "no address") }
+            if provider.needsKey { parts.append(Secrets.key(forProvider: provider.id) == nil ? "no key yet" : "key saved") }
+            parts.append(reads.isEmpty ? "text only" : "reads \(reads.joined(separator: " and "))")
+            return parts.joined(separator: " · ")
         }
     }
 
@@ -238,26 +263,17 @@ struct ModelsSettings: View {
         return false
     }
 
-    /// One tiny request; for an OpenAI-compatible server, also lists its models for the pickers.
+    /// One tiny request, after reading the provider's models for the pickers.
     private func test(_ provider: ModelProvider) {
         checks[provider.id] = "Testing…"
-        let started = Date()
+        let model = settings.roles.values.first { $0.provider == provider.id }?.model
+            ?? settings.localRoles.values.first { $0.provider == provider.id }?.model
         Task {
             do {
-                if provider.kind == .openAICompatible, let base = provider.baseURL {
-                    found[provider.id] = try? await OpenAICompatibleConnector.models(base: base, apiKey: Secrets.get("model.\(provider.id)"))
-                }
-                let model = settings.roles.values.first { $0.provider == provider.id }?.model
-                    ?? settings.localRoles.values.first { $0.provider == provider.id }?.model
-                    ?? (provider.kind == .anthropic ? ClaudeModel.fast : found[provider.id]?.first ?? "default")
-                let connector = try ModelGateway.connector(for: provider) { id in
-                    id == "claude" ? Secrets.get(Secrets.claudeKey) : Secrets.get("model.\(id)")
-                }
-                let reply = try await connector.send(ModelRequest(system: "Reply with the single word OK.",
-                                                                  messages: [ModelMessage(role: .user, text: "Ready?")], maxTokens: 16), model: model)
-                let seconds = String(format: "%.1fs", Date().timeIntervalSince(started))
-                let count = found[provider.id].map { " · \($0.count) models" } ?? ""
-                checks[provider.id] = "Working (\(model), \(seconds))\(count)" + (reply.text.isEmpty ? " but replied empty" : "")
+                let result = try await ProviderCheck.run(provider, key: Secrets.key(forProvider: provider.id), model: model)
+                if !result.models.isEmpty { found[provider.id] = result.models }
+                let count = result.models.isEmpty ? "" : " · \(result.models.count) models"
+                checks[provider.id] = "Working (\(result.tested), \(String(format: "%.1fs", result.seconds)))\(count)"
             } catch {
                 checks[provider.id] = error.localizedDescription
             }
@@ -271,60 +287,6 @@ extension ModelRole {
         case .fast: return "Fast"
         case .everyday: return "Everyday"
         case .deep: return "Deep"
-        }
-    }
-}
-
-/// Adding a model: an OpenAI-compatible server (local or not) or Apple's on-device model.
-private struct AddProviderForm: View {
-    let settings: ModelSettings
-    let add: (ModelProvider, String?) -> Void
-    let cancel: () -> Void
-    @State private var apple = false
-    @State private var name = "Ollama"
-    @State private var address = "http://localhost:11434/v1"
-    @State private var key = ""
-    @State private var local = true
-    @State private var images = false
-    @State private var pdfs = false
-
-    private var addressIsLocal: Bool {
-        ModelProvider(id: "x", kind: .openAICompatible, baseURL: address, local: true).isLocal
-    }
-
-    var body: some View {
-        Picker("Kind", selection: $apple) {
-            Text("OpenAI-compatible server").tag(false)
-            Text("Apple on-device").tag(true)
-        }
-        .onChange(of: apple) { on in if on { name = "Apple" } }
-        if !apple {
-            TextField("Name", text: $name)
-            TextField("Address", text: $address)
-                .onChange(of: address) { _ in if !addressIsLocal { local = false } }
-            SecureField("Key (if it needs one)", text: $key)
-            Toggle("Runs on this Mac", isOn: $local).disabled(!addressIsLocal)
-            Toggle("Reads images", isOn: $images)
-            Toggle("Reads PDFs", isOn: $pdfs)
-        } else if !ModelsSettings.appleAvailable {
-            Text("Not available on this Mac yet: it needs macOS 26 with Apple Intelligence on. You can still add it; Broski uses it once it is.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
-        }
-        HStack {
-            Spacer()
-            Button("Cancel", action: cancel)
-            Button("Add") {
-                let id = settings.newID(for: apple ? "apple" : name)
-                if apple {
-                    add(ModelProvider(id: id, kind: .appleOnDevice), nil)
-                } else {
-                    let caps: Set<ModelCapability> = Set([images ? .images : nil, pdfs ? .pdfs : nil].compactMap { $0 })
-                    add(ModelProvider(id: id, kind: .openAICompatible, baseURL: address.trimmingCharacters(in: .whitespaces),
-                                      local: local && addressIsLocal, capabilities: caps), key)
-                }
-            }
-            .keyboardShortcut(.defaultAction)
-            .disabled(!apple && (name.trimmingCharacters(in: .whitespaces).isEmpty || URL(string: address)?.host == nil))
         }
     }
 }

@@ -119,9 +119,10 @@ final class CaptureModel: ObservableObject {
         proposalTask?.cancel()
         let text = trimmed
         guard !text.isEmpty else { proposal = nil; return }
-        // Rules answer instantly; Claude (if you've added a key) refines it after you pause typing.
+        // Rules answer instantly; the fast model (when one can answer) refines it after you pause typing.
         proposal = Rules.interpret(text, catalog: store.catalog, activeSession: store.activeSession)
-        guard let key = Keychain.claudeKey, !touchesLocalOnly(text) else { return }
+        guard store.hasModel, !touchesLocalOnly(text) else { return }
+        let gateway = store.gateway
         let catalog = store.catalog
         let session = store.activeSession
         let count = attachments.count
@@ -132,11 +133,11 @@ final class CaptureModel: ObservableObject {
             thinking = true
             defer { thinking = false }
             let request = Interpreter.Request(
-                // Claude isn't told local-only projects exist, so it can't file anything into them.
+                // The model isn't told local-only projects exist, so it can't file anything into them.
                 text: text, spoken: false, projects: catalog.projects.map(\.name).filter { !store.localOnly.contains($0) },
                 activeSession: session.map { "\($0.kind.label) “\($0.title)” for \($0.project ?? "the inbox")" },
                 context: ItemContext(app: "iPhone"), attachmentCount: count)
-            if var result = try? await Interpreter.interpret(request, with: ClaudeClient(apiKey: key)),
+            if var result = try? await Interpreter.interpret(request, gateway: gateway),
                !Task.isCancelled, self.trimmed == text {
                 result.project = catalog.match(result.project)?.name ?? result.project
                 proposal = result
@@ -229,7 +230,8 @@ final class CaptureModel: ObservableObject {
                 if !said.isEmpty || !attachments.isEmpty { session = try store.append(text: said, files: attachments, context: context, to: session) }
                 let ended = try store.endSession(session)
                 self.store.refreshLocalOnly()
-                try store.writeReport(await Self.report(for: ended, localOnly: self.store.localOnly), for: ended)
+                try store.writeReport(await Self.report(for: ended, localOnly: self.store.localOnly,
+                                                        gateway: self.store.hasModel ? self.store.gateway : nil), for: ended)
                 done("Report ready", "\(ended.entries.count) captures from \(ended.title)")
             case "cancel" where !attachments.isEmpty:
                 // Only the words go: photos are thrown away only with Discard.
@@ -292,8 +294,8 @@ final class CaptureModel: ObservableObject {
     }
 
     /// A local-only session's entries and photos stay on the phone: it gets the plain report.
-    private static func report(for session: Session, localOnly: Set<String>) async -> String {
-        guard let key = Keychain.claudeKey, session.project.map(localOnly.contains) != true else { return ReportWriter.basic(session) }
+    private static func report(for session: Session, localOnly: Set<String>, gateway: ModelGateway?) async -> String {
+        guard let gateway, session.project.map(localOnly.contains) != true else { return ReportWriter.basic(session) }
         let folder = session.folder
         let paths = Array(session.entries.flatMap(\.attachments).prefix(20))
         // Off the main actor: decoding and resizing up to 20 photos would freeze the screen.
@@ -307,7 +309,7 @@ final class CaptureModel: ObservableObject {
             }
             return images
         }.value
-        if let report = try? await ReportWriter.write(session, images: images, with: ClaudeClient(apiKey: key)) {
+        if let report = try? await ReportWriter.write(session, images: images, gateway: gateway) {
             return report.reportMarkdown
         }
         return ReportWriter.basic(session)

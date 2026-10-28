@@ -14,7 +14,7 @@ description: Find out why the installed Broski misbehaves (mic not heard, a repl
 
 ## Reproduce without their data
 
-- **Voice and the mic:** `Broski --diagnose <audio file> <report>` with its flags (`--voice-processing-fallback`, `--mic-check` and the others in `Sources/Broski/Diagnostics.swift`). Make test audio with `say -o /tmp/phrase.aiff "…"`; with a Bluetooth speaker connected, `say` may play there instead.
+- **Voice and the mic:** `Broski --diagnose <audio file> <report>` with its flags (`--voice-processing-fallback`, `--mics` and the others in `Sources/Broski/Diagnostics.swift`). Make test audio with `say -o /tmp/phrase.aiff "…"`; with a Bluetooth speaker connected, `say` may play there instead.
 - **The chat (keys, scrolling, focus):** `Broski --chat-check <report>`.
 - **How screens look:** `Broski --snapshot <folder>`, light and dark.
 - **Can this build read their data:** `Broski --check-folder <report>` reads the real folder without writing and reports what it couldn't read (counts only, never content).

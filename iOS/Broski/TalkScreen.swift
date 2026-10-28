@@ -98,7 +98,7 @@ final class PhoneHome: ObservableObject {
 
     /// A model to talk to: Claude with a key, any other server the Mac set up, or Apple's on-device model.
     var canTalk: Bool {
-        ModelSetup.ready(settings, claudeKey: Keychain.claudeKey != nil, appleAvailable: Self.appleAvailable)
+        ModelSetup.ready(settings, hasKey: { Keychain.key(forProvider: $0) != nil }, appleAvailable: Self.appleAvailable)
     }
 
     static var appleAvailable: Bool {
@@ -109,9 +109,7 @@ final class PhoneHome: ObservableObject {
     }
 
     var gateway: ModelGateway {
-        ModelGateway(settings: settings, root: store.root, device: "iphone") { id in
-            id == "claude" ? Keychain.claudeKey : Keychain.get("model.\(id)")
-        }
+        ModelGateway(settings: settings, root: store.root, device: "iphone") { Keychain.key(forProvider: $0) }
     }
 
     /// Projects the conversation can be about: local-only ones never leave the Mac's own models, so they aren't offered.
@@ -142,7 +140,7 @@ final class PhoneHome: ObservableObject {
         // waits in the box until there's a model to answer it.
         guard canTalk else {
             if said == nil { draft = text }
-            problem = "Add your Claude key in Settings › Claude to get replies. “note: …” saves a note without one."
+            problem = "Add a key for your model in Settings › Models to get replies. “note: …” saves a note without one."
             return
         }
         if said == nil { pending = [] }
@@ -571,7 +569,7 @@ struct TalkScreen: View {
                         // Not lazy: rows measured as they scroll into view make the position jump.
                         VStack(alignment: .leading, spacing: 12) {
                             if !model.canTalk {
-                                Label("Add your Claude key in Settings › Claude to talk to Broski.", systemImage: "key")
+                                Label("Add a key for your model in Settings › Models to talk to Broski.", systemImage: "key")
                                     .font(.callout).foregroundStyle(.orange)
                             } else if model.visibleTurns.isEmpty {
                                 Text(model.isPrivate

@@ -1,0 +1,97 @@
+name: Something's wrong
+description: A bug, a lost note, a crash, or Broski doing something it shouldn't
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. A security problem (a leak, Broski acting without asking, reading what it shouldn't)? Please don't file it here: report it privately as described in SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: In your own words. Leave out note text, names and anything private.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Mac or iPhone
+      options:
+        - Mac app
+        - iPhone app
+        - Both
+        - The MCP server (Claude Code or another client)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Broski version
+      description: Settings › About, on the Mac or the iPhone.
+      placeholder: "0.11.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: macOS or iOS version
+      placeholder: "macOS 15.4, iOS 18.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Model provider
+      description: The one the problem involves (Settings › Models), if any.
+      options:
+        - Not about a model
+        - Claude (Anthropic)
+        - OpenAI
+        - Google Gemini
+        - OpenRouter
+        - Groq
+        - Mistral
+        - DeepSeek
+        - Ollama
+        - LM Studio
+        - Apple on-device
+        - Another server (custom)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: voice
+    attributes:
+      label: Speech engine and mic, if it's about voice
+      description: Settings › Voice (Automatic, Bark or Whisper), and the mic you use, like "built-in" or "USB interface".
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: |
+        The last lines of `<Broski folder>/.broski/broski.log`, or Settings › About › Copy diagnostics for feedback. The log never holds what you said, but it does hold file paths that can include your user name or project names. Remove anything personal before you paste.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: I removed notes, names and keys from everything above.
+          required: true

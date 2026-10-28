@@ -60,11 +60,11 @@ public struct ProviderPreset: Equatable, Identifiable, Sendable {
     public static let ollama = ProviderPreset(
         id: "ollama", name: "Ollama", kind: .openAICompatible, baseURL: "http://localhost:11434/v1", keyURL: nil,
         needsKey: false, local: true, capabilities: [], structuredOutput: true, suggested: [:],
-        blurb: "Models on this Mac. Free and private; nothing leaves the device.")
+        blurb: "Models on this Mac. Free and private.")
     public static let lmStudio = ProviderPreset(
         id: "lm-studio", name: "LM Studio", kind: .openAICompatible, baseURL: "http://localhost:1234/v1", keyURL: nil,
         needsKey: false, local: true, capabilities: [], structuredOutput: true, suggested: [:],
-        blurb: "Models on this Mac. Free and private; nothing leaves the device.")
+        blurb: "Models on this Mac. Free and private.")
     public static let apple = ProviderPreset(
         id: "apple", name: "Apple on-device", kind: .appleOnDevice, baseURL: nil, keyURL: nil, needsKey: false, local: true,
         capabilities: [], structuredOutput: false, suggested: [.fast: "default", .everyday: "default", .deep: "default"],
@@ -72,7 +72,7 @@ public struct ProviderPreset: Equatable, Identifiable, Sendable {
     public static let custom = ProviderPreset(
         id: "custom", name: "Another server", kind: .openAICompatible, baseURL: nil, keyURL: nil, needsKey: false, local: false,
         capabilities: [], structuredOutput: false, suggested: [:],
-        blurb: "Anything that speaks the OpenAI API: llama.cpp, vLLM, LiteLLM, a company gateway.")
+        blurb: "Any OpenAI-compatible server: llama.cpp, vLLM, LiteLLM.")
 
     /// In the order the chooser shows them.
     public static let all: [ProviderPreset] = [claude, openAI, gemini, openRouter, groq, mistral, deepSeek, ollama, lmStudio, apple, custom]
@@ -137,15 +137,31 @@ public struct ProviderPreset: Equatable, Identifiable, Sendable {
     /// `settings` with this preset's provider added (as `providerID`) and every role on it. A provider that runs on
     /// this device also takes the local-only roles.
     public func apply(to settings: ModelSettings, providerID: String, available: [String], baseURL: String? = nil) -> ModelSettings {
+        apply(to: settings, provider: self.provider(id: providerID, baseURL: baseURL ?? settings.provider(providerID)?.baseURL),
+              available: available)
+    }
+
+    /// The same, for a provider already made (a server added by hand, with its own name and address).
+    public func apply(to settings: ModelSettings, provider: ModelProvider, available: [String]) -> ModelSettings {
         var new = settings
-        let provider = self.provider(id: providerID, baseURL: baseURL ?? settings.provider(providerID)?.baseURL)
         new.add(provider)
         for role in ModelRole.allCases {
             guard let model = pick(role, from: available) else { continue }
-            new.roles[role] = ModelChoice(provider: providerID, model: model)
-            if provider.isLocal { new.localRoles[role] = ModelChoice(provider: providerID, model: model) }
+            new.roles[role] = ModelChoice(provider: provider.id, model: model)
+            if provider.isLocal { new.localRoles[role] = ModelChoice(provider: provider.id, model: model) }
         }
         return new
+    }
+}
+
+extension ModelSettings {
+    /// The id to connect `preset` under: the provider already made from it (connecting again updates it), else the
+    /// preset's own id, else a new one. Every server added by hand gets its own.
+    public func providerID(for preset: ProviderPreset) -> String {
+        if preset.id != ProviderPreset.custom.id,
+           let existing = providers.first(where: { ProviderPreset.of($0)?.id == preset.id }) { return existing.id }
+        if provider(preset.id) == nil { return preset.id }
+        return newID(for: preset.id == ProviderPreset.custom.id ? "server" : preset.name)
     }
 }
 

@@ -100,6 +100,8 @@ enum ChatCheck {
             try? store.append(Turn(at: start.addingTimeInterval(Double(i) * 20), device: "mac", speaker: you ? .you : .broski, text: text))
         }
         let app = AppModel(root: root)
+        // Never a real model call (or its cost) from a developer check, whatever keys this Mac has.
+        app.brain.makeGateway = { nil }
         let home = app.homeModel
         home.draft = ""
         home.reload()

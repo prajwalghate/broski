@@ -69,7 +69,7 @@ struct AskScreen: View {
                             }
                         }
                         if !answer.usedAI {
-                            Text(Keychain.claudeKey == nil ? "Add a Claude key in Settings for real answers. These are the notes that match." : "These are the notes that match.")
+                            Text(store.hasModel ? "These are the notes that match." : "Add a key for your model in Settings › Models for real answers. These are the notes that match.")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                     } else if !asking {

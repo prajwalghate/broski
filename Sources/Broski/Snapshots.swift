@@ -13,6 +13,8 @@ enum Snapshots {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("broski-snapshot-\(UUID().uuidString)")
         seed(root)
         let app = AppModel(root: root)
+        // Never a real model call (or its cost) from a developer check, whatever keys this Mac has.
+        app.brain.makeGateway = { nil }
         app.library.reload()
         // The tracker is read off the main thread; wait for it so the Tracker tab has records to show.
         app.library.loadRegistry()
@@ -32,15 +34,15 @@ enum Snapshots {
             UserDefaults.standard.set(tab.rawValue, forKey: "BroskiDashboardTab")
             render(DashboardView(library: app.library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: selection), size: size, to: folder, name)
         }
-        dashboard("strado", tab: .board, "dashboard-board")
+        dashboard("trailmix", tab: .board, "dashboard-board")
         renderCompanion(app, to: folder)
         UserDefaults.standard.set(ProjectTab.board.rawValue, forKey: "BroskiDashboardTab")
-        render(DashboardView(library: app.library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "strado"),
+        render(DashboardView(library: app.library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "trailmix"),
                size: NSSize(width: 860, height: 600), to: folder, "dashboard-narrow")
         dashboard(DashboardView.allID, tab: .list, "dashboard-list")
-        dashboard("strado", tab: .sessions, "dashboard-sessions")
-        dashboard("strado", tab: .screenshots, "dashboard-screenshots")
-        if let item = app.library.project(named: "strado")?.items.first(where: { !$0.attachments.isEmpty }) {
+        dashboard("trailmix", tab: .sessions, "dashboard-sessions")
+        dashboard("trailmix", tab: .screenshots, "dashboard-screenshots")
+        if let item = app.library.project(named: "trailmix")?.items.first(where: { !$0.attachments.isEmpty }) {
             render(ItemInspector(library: app.library, item: item, githubRepo: nil, onClose: {}), size: NSSize(width: 340, height: 740), to: folder, "inspector")
         }
 
@@ -51,12 +53,12 @@ enum Snapshots {
         model.phase = .listening
         model.level = 0.7
         model.text = ""
-        model.liveText = "In the strado project, add a bug: the login button overlaps the logo on narrow windows"
-        model.context = ItemContext(app: "Safari", window: "Strado — Sign in", url: "https://staging.strado.app/login")
-        model.attachments = app.library.project(named: "strado")?.items.flatMap(\.attachmentURLs).prefix(1).map { $0 } ?? []
+        model.liveText = "In the trailmix project, add a bug: the login button overlaps the logo on narrow windows"
+        model.context = ItemContext(app: "Safari", window: "Trailmix — Sign in", url: "https://staging.trailmix.app/login")
+        model.attachments = app.library.project(named: "trailmix")?.items.flatMap(\.attachmentURLs).prefix(1).map { $0 } ?? []
         renderPanel(PanelView(model: model), to: folder, "panel-listening")
         model.holding = true
-        model.text = "In the strado project, add a bug: the login button stays disabled"
+        model.text = "In the trailmix project, add a bug: the login button stays disabled"
         model.liveText = "after you paste the password"
         model.transcribingChunk = true
         model.attachments = []
@@ -69,10 +71,10 @@ enum Snapshots {
         model.attachments = []
         model.context = ItemContext(app: "Xcode")
         renderPanel(PanelView(model: model), to: folder, "panel-typing")
-        model.text = "In the strado project, add a bug: the login button overlaps the logo when the window is narrow"
-        model.attachments = app.library.project(named: "strado")?.items.flatMap(\.attachmentURLs).prefix(1).map { $0 } ?? []
-        model.context = ItemContext(app: "Brave Browser", window: "Strado — Sign in", url: "https://staging.strado.app/login")
-        model.proposal = Interpretation(project: "strado", kind: "bug", title: "Login button overlaps the logo on narrow windows")
+        model.text = "In the trailmix project, add a bug: the login button overlaps the logo when the window is narrow"
+        model.attachments = app.library.project(named: "trailmix")?.items.flatMap(\.attachmentURLs).prefix(1).map { $0 } ?? []
+        model.context = ItemContext(app: "Brave Browser", window: "Trailmix — Sign in", url: "https://staging.trailmix.app/login")
+        model.proposal = Interpretation(project: "trailmix", kind: "bug", title: "Login button overlaps the logo on narrow windows")
         renderPanel(PanelView(model: model), to: folder, "panel-review")
         model.proposal = nil
         model.text = ""
@@ -91,7 +93,7 @@ enum Snapshots {
         renderPanel(PanelView(model: model), to: folder, "panel-clips")
         model.clips = []
         model.proposal = nil
-        model.appendTarget = app.library.project(named: "strado")?.items.first
+        model.appendTarget = app.library.project(named: "trailmix")?.items.first
         model.lastItem = model.appendTarget
         model.text = "Also check it on the signup screen"
         renderPanel(PanelView(model: model), to: folder, "panel-add-more")
@@ -103,7 +105,7 @@ enum Snapshots {
         model.text = ""
         model.phase = .saved
         model.savedTitle = "Login button overlaps the logo on narrow windows"
-        model.savedDetail = "strado · bug · 1 screenshot"
+        model.savedDetail = "trailmix · bug · 1 screenshot"
         renderPanel(PanelView(model: model), to: folder, "panel-saved")
 
         for (activity, name) in [(CaptureController.Activity.idle, "idle"), (.listening, "listening"), (.saved, "saved")] {
@@ -115,19 +117,19 @@ enum Snapshots {
             render(OnboardingView(app: app, step: step), size: NSSize(width: 640, height: 560), to: folder, "onboarding-\(step)")
         }
         for tab in SettingsTab.allCases {
-            render(SettingsView(app: app, tab: tab), size: NSSize(width: 660, height: 580), to: folder, "settings-\(tab.rawValue)")
+            render(SettingsView(app: app, tab: tab), size: NSSize(width: 820, height: 580), to: folder, "settings-\(tab.rawValue)")
         }
     }
 
     /// The brain and the companion: a project's living page, Ask, the pill's cards, a riff, call notes.
     private static func renderCompanion(_ app: AppModel, to folder: URL) {
         let library = app.library
-        let strado = library.project(named: "strado")?.items ?? []
-        let bug = strado.first { $0.kind == .bug }?.id ?? ""
-        let todo = strado.first { $0.kind == .todo }?.id ?? ""
-        let idea = strado.first { $0.kind == .idea }?.id ?? ""
-        let refs = library.index.refs.filter { $0.project == "strado" }
-        library.usePage(ProjectPage(project: "strado", summary: "Strado is in pre-launch polish: the trading flow works end to end, and the open work is the Safari login bug and rotating keys before launch.",
+        let trailmix = library.project(named: "trailmix")?.items ?? []
+        let bug = trailmix.first { $0.kind == .bug }?.id ?? ""
+        let todo = trailmix.first { $0.kind == .todo }?.id ?? ""
+        let idea = trailmix.first { $0.kind == .idea }?.id ?? ""
+        let refs = library.index.refs.filter { $0.project == "trailmix" }
+        library.usePage(ProjectPage(project: "trailmix", summary: "Trailmix is in pre-launch polish: the trading flow works end to end, and the open work is the Safari login bug and rotating keys before launch.",
             sections: [
                 .init(title: "Where it stands", lines: [.init(text: "Signup and the first bot run work; QA is down to the login screen.", cites: [bug])]),
                 .init(title: "Open bugs", lines: [.init(text: "Login button overlaps the logo on narrow windows (high)", cites: [bug])]),
@@ -143,11 +145,11 @@ enum Snapshots {
             compiled: Date().addingTimeInterval(-240), source: .claude, fingerprint: ProjectPage.fingerprint(refs)))
         let size = NSSize(width: 1180, height: 740)
         UserDefaults.standard.set(ProjectTab.overview.rawValue, forKey: "BroskiDashboardTab")
-        render(DashboardView(library: library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "strado"), size: size, to: folder, "dashboard-overview")
+        render(DashboardView(library: library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "trailmix"), size: size, to: folder, "dashboard-overview")
         render(DashboardView(library: library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: DashboardView.allID), size: size, to: folder, "dashboard-home")
 
         let ask = AskModel(library: library, voice: app.voice)
-        ask.question = "What's still open on strado before launch?"
+        ask.question = "What's still open on trailmix before launch?"
         let sources = [bug, todo].compactMap { library.index.ref(id: $0) }
         ask.answer = Ask.Answer(markdown: "Two things: the **login button overlapping the logo** on narrow windows, which is high priority [[\(bug)]], and **rotating the Stripe keys** [[\(todo)]]. Fix the login bug first; it blocks the QA pass.", sources: sources, usedAI: true)
         // Sized the way the panel sizes it (its ideal height), so the picture matches the app.
@@ -162,11 +164,11 @@ enum Snapshots {
         renderTransparent(askPanel(), size: NSSize(width: 640, height: 700), to: folder, "ask-long")
 
         let companion = app.companion
-        companion.preview(.nudge(CompanionPlanner.backToProject("strado", items: library.allItems) ?? Nudge(kind: .backToProject, key: "x", project: "strado", title: "Back on strado", body: "")))
+        companion.preview(.nudge(CompanionPlanner.backToProject("trailmix", items: library.allItems) ?? Nudge(kind: .backToProject, key: "x", project: "trailmix", title: "Back on trailmix", body: "")))
         renderTransparent(PillView(companion: companion).frame(width: 460), size: NSSize(width: 460, height: 230), to: folder, "pill-nudge")
         companion.preview(.checkIn(CheckIn.build(items: library.allItems, options: .init())))
         renderTransparent(PillView(companion: companion).frame(width: 460), size: NSSize(width: 460, height: 330), to: folder, "pill-checkin")
-        companion.preview(.help(Companion.Help(state: .answer("That's a **CORS error**: the API at api.strado.app doesn't allow requests from localhost:3000.\n\n- Add `http://localhost:3000` to the allowed origins in the API config\n- You hit the same thing on staging last week [[\(bug)]]", sources), project: "strado", context: ItemContext(app: "Brave Browser", window: "Strado — Console"))))
+        companion.preview(.help(Companion.Help(state: .answer("That's a **CORS error**: the API at api.trailmix.app doesn't allow requests from localhost:3000.\n\n- Add `http://localhost:3000` to the allowed origins in the API config\n- You hit the same thing on staging last week [[\(bug)]]", sources), project: "trailmix", context: ItemContext(app: "Brave Browser", window: "Trailmix — Console"))))
         renderTransparent(PillView(companion: companion).frame(width: 460), size: NSSize(width: 460, height: 300), to: folder, "pill-help")
         companion.preview(nil)
         renderTransparent(PillView(companion: companion).frame(width: 460), size: NSSize(width: 460, height: 50), to: folder, "pill")
@@ -178,17 +180,17 @@ enum Snapshots {
         if store.recent(1).isEmpty {
             let start = Date().addingTimeInterval(-600)
             let seeded: [Turn] = [
-                Turn(at: start, device: "mac", speaker: .topic, text: "strado", project: "strado"),
-                Turn(at: start.addingTimeInterval(5), device: "mac", speaker: .you, text: "Should I run a week of paper trading before real money, or just start small?", project: "strado"),
-                Turn(at: start.addingTimeInterval(20), device: "mac", speaker: .broski, text: "Your notes say the stop-loss guard is still open, so I'd do the paper week, with a pass bar set before it starts. What would make you trust it?", project: "strado", model: "claude-sonnet-5-5"),
-                Turn(at: start.addingTimeInterval(60), device: "iphone", speaker: .you, text: "Paper week first. Pass bar: fills within 0.2% of the quote. The guard lands before that.", project: "strado"),
-                Turn(at: start.addingTimeInterval(80), device: "mac", speaker: .note, text: "Noted in strado: Replay the March crash day", project: "strado"),
+                Turn(at: start, device: "mac", speaker: .topic, text: "trailmix", project: "trailmix"),
+                Turn(at: start.addingTimeInterval(5), device: "mac", speaker: .you, text: "Should I run a week of paper trading before real money, or just start small?", project: "trailmix"),
+                Turn(at: start.addingTimeInterval(20), device: "mac", speaker: .broski, text: "Your notes say the stop-loss guard is still open, so I'd do the paper week, with a pass bar set before it starts. What would make you trust it?", project: "trailmix", model: "claude-sonnet-5-5"),
+                Turn(at: start.addingTimeInterval(60), device: "iphone", speaker: .you, text: "Paper week first. Pass bar: fills within 0.2% of the quote. The guard lands before that.", project: "trailmix"),
+                Turn(at: start.addingTimeInterval(80), device: "mac", speaker: .note, text: "Noted in trailmix: Replay the March crash day", project: "trailmix"),
             ]
             for turn in seeded { try? store.append(turn) }
         }
         let home = app.homeModel
         home.reload()
-        home.card = SaveCard(project: "strado", items: [
+        home.card = SaveCard(project: "trailmix", items: [
             .init(kind: .decision, title: "Paper-trade one week before real money; pass bar: fills within 0.2% of the quote"),
             .init(kind: .todo, title: "Write the stop-loss guard before the paper week"),
         ])
@@ -205,9 +207,9 @@ enum Snapshots {
 
         // What Broski knows, with a remembered fact and a decision that replaced an earlier one.
         try? Memory.remember("Prefers short, direct answers", root: app.root, device: "mac")
-        let first = Decision(at: Date().addingTimeInterval(-3 * 86_400), device: "mac", project: "strado", text: "Start live with $500")
+        let first = Decision(at: Date().addingTimeInterval(-3 * 86_400), device: "mac", project: "trailmix", text: "Start live with $500")
         try? DecisionLog.record(first, root: app.root)
-        try? DecisionLog.record(Decision(device: "mac", project: "strado", text: "Paper-trade one week before real money", replaces: first.id), root: app.root)
+        try? DecisionLog.record(Decision(device: "mac", project: "trailmix", text: "Paper-trade one week before real money", replaces: first.id), root: app.root)
         app.memoryModel.reload()
         render(MemoryView(model: app.memoryModel), size: NSSize(width: 560, height: 480), to: folder, "memory")
         // Someone new with no model yet: the greeting and the setup card.
@@ -228,14 +230,14 @@ enum Snapshots {
         try? RiffMode.addRule("Push back harder", root: riffRoot, device: "mac")
         let riffStore = ConversationStore(root: riffRoot, device: "mac")
         let riffStart = Date().addingTimeInterval(-300)
-        for (i, turn) in [RiffMode.startTurn(device: "mac", project: "strado", about: "a referral program", at: riffStart),
-                          Turn(at: riffStart.addingTimeInterval(10), device: "mac", speaker: .you, text: "What if every user gets a free month for each friend who signs up?", project: "strado", mode: "riff"),
-                          Turn(at: riffStart.addingTimeInterval(20), device: "mac", speaker: .broski, text: "A free month is easy to explain, but your free tier already covers three bots, so only a month of Pro means anything. Two directions: reward the referrer only when the friend's bot runs a week, or let profitable traders share a results card as their link. Who refers people: traders already winning, or anyone who signs up?", project: "strado", model: ClaudeModel.deep, mode: "riff")].enumerated() {
+        for (i, turn) in [RiffMode.startTurn(device: "mac", project: "trailmix", about: "a referral program", at: riffStart),
+                          Turn(at: riffStart.addingTimeInterval(10), device: "mac", speaker: .you, text: "What if every user gets a free month for each friend who signs up?", project: "trailmix", mode: "riff"),
+                          Turn(at: riffStart.addingTimeInterval(20), device: "mac", speaker: .broski, text: "A free month is easy to explain, but your free tier already covers three bots, so only a month of Pro means anything. Two directions: reward the referrer only when the friend's bot runs a week, or let profitable traders share a results card as their link. Who refers people: traders already winning, or anyone who signs up?", project: "trailmix", model: ClaudeModel.deep, mode: "riff")].enumerated() {
             _ = i
             try? riffStore.append(turn)
         }
         let riffing = HomeModel(root: riffRoot, library: app.library, voice: app.voice) { BroskiConfig.defaults }
-        riffing.project = "strado"
+        riffing.project = "trailmix"
         render(HomeView(model: riffing, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home-riff")
         try? FileManager.default.removeItem(at: riffRoot)
 
@@ -259,7 +261,7 @@ enum Snapshots {
         try? FileManager.default.removeItem(at: vaultRoot)
 
         // Reflection's log: one change undone, one standing.
-        try? Reflection.apply(Reflection.Proposal(remember: [.init(text: "Reads replies on the phone between meetings", why: "Oct 24: said so while planning strado")],
+        try? Reflection.apply(Reflection.Proposal(remember: [.init(text: "Reads replies on the phone between meetings", why: "Oct 24: said so while planning trailmix")],
                                                   forget: [.init(text: "Prefers short, direct answers", why: "Oct 24: asked for fuller explanations")]),
                               root: app.root, device: "mac", at: Date().addingTimeInterval(-3600))
         if let dropped = Reflection.log(root: app.root).first(where: { $0.op == "forget" }) { try? Reflection.undo(dropped, root: app.root, device: "mac") }
@@ -279,6 +281,10 @@ enum Snapshots {
                                                 model: model, project: nil, usage: ModelUsage(input: tokens, output: tokens / 10)), root: app.root)
         }
         render(ModelsSettings(app: app).frame(width: 640, height: 1180), size: NSSize(width: 640, height: 1180), to: folder, "settings-models-filled")
+        // The website's picture of Settings › Models (site/assets/screens).
+        render(ModelsSettings(app: app).frame(width: 640, height: 700), size: NSSize(width: 640, height: 700), to: folder, "settings-models-site")
+        render(ProviderChooserSheet(app: app, preset: .openAI), size: NSSize(width: 620, height: 560), to: folder, "provider-chooser")
+        render(ProviderChooserSheet(app: app, preset: .ollama), size: NSSize(width: 620, height: 560), to: folder, "provider-chooser-local")
         app.update { $0.models = saved }
 
         let call = CallModel(library: library, brain: app.brain, transcription: app.transcription)
@@ -295,7 +301,7 @@ enum Snapshots {
 
         // Trackers: the Tracker tab, onboarding, and adding to a tracker Broski keeps.
         UserDefaults.standard.set(ProjectTab.tracker.rawValue, forKey: "BroskiDashboardTab")
-        render(DashboardView(library: library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "strado"), size: size, to: folder, "dashboard-tracker")
+        render(DashboardView(library: library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "trailmix"), size: size, to: folder, "dashboard-tracker")
 
         // A project set up in a conversation: its command center from its packs, with a build in its tracker.
         if library.project(named: "set-log") == nil {
@@ -315,10 +321,10 @@ enum Snapshots {
         UserDefaults.standard.set(ProjectTab.center.rawValue, forKey: "BroskiDashboardTab")
         render(DashboardView(library: library, shortcut: "⌥⇧B", onCapture: {}, onScreenshot: {}, selection: "set-log"), size: size, to: folder, "dashboard-center")
         UserDefaults.standard.set(ProjectTab.tracker.rawValue, forKey: "BroskiDashboardTab")
-        if let strado = library.project(named: "strado") {
-            render(OnboardSheet(library: library, project: strado) {}, size: NSSize(width: 640, height: 300), to: folder, "tracker-onboard")
-            if let tracker = strado.entry?.trackers.first {
-                render(NewItemSheet(library: library, project: strado, tracker: tracker) {}, size: NSSize(width: 520, height: 330), to: folder, "tracker-new-item")
+        if let trailmix = library.project(named: "trailmix") {
+            render(OnboardSheet(library: library, project: trailmix) {}, size: NSSize(width: 640, height: 300), to: folder, "tracker-onboard")
+            if let tracker = trailmix.entry?.trackers.first {
+                render(NewItemSheet(library: library, project: trailmix, tracker: tracker) {}, size: NSSize(width: 520, height: 330), to: folder, "tracker-new-item")
             }
         }
         UserDefaults.standard.set(ProjectTab.board.rawValue, forKey: "BroskiDashboardTab")
@@ -367,24 +373,24 @@ enum Snapshots {
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         if let png = sampleScreenshot().pngData() { try? png.write(to: shot) }
         let notes: [(String, NoteKind, String?, Double, ItemStatus?, Priority, [URL])] = [
-            ("Login button overlaps the logo on narrow windows", .bug, "strado", 0.3, nil, .high, [shot]),
-            ("Rotate the API keys before launch", .todo, "strado", 2, .doing, .urgent, []),
-            ("Dark mode for the dashboard", .idea, "strado", 26, nil, .normal, []),
-            ("Customers keep asking for CSV export", .note, "strado", 30, nil, .normal, []),
-            ("Write the onboarding email sequence", .todo, "strado", 80, .done, .normal, []),
+            ("Login button overlaps the logo on narrow windows", .bug, "trailmix", 0.3, nil, .high, [shot]),
+            ("Rotate the API keys before launch", .todo, "trailmix", 2, .doing, .urgent, []),
+            ("Dark mode for the dashboard", .idea, "trailmix", 26, nil, .normal, []),
+            ("Customers keep asking for CSV export", .note, "trailmix", 30, nil, .normal, []),
+            ("Write the onboarding email sequence", .todo, "trailmix", 80, .done, .normal, []),
             ("Retry failed orders with exponential backoff", .todo, "trading-bot", 1.5, nil, .high, []),
             ("Alert on Slack after three failed fills", .idea, "trading-bot", 50, nil, .normal, []),
-            ("Landing page needs social proof", .idea, "marketroom", 6, nil, .normal, []),
+            ("Landing page needs social proof", .idea, "sunroom", 6, nil, .normal, []),
             ("Buy a better microphone", .note, nil, 2, nil, .low, []),
         ]
         for (title, kind, project, hours, status, priority, files) in notes {
             var draft = ItemDraft(project: project, kind: kind, status: status, priority: priority, tags: kind == .bug ? ["ui", "safari"] : [],
-                                  title: title, context: ItemContext(app: "Safari", url: "https://staging.strado.app"), attachments: files)
+                                  title: title, context: ItemContext(app: "Safari", url: "https://staging.trailmix.app"), attachments: files)
             if kind == .note { draft.body = "Three of the last five demos asked for it. Probably a settings page export." }
             _ = try? store.create(draft, date: ago(hours))
         }
-        // A tracker Broski keeps for strado, so the Tracker tab and onboarding have something real to show.
-        if let tracker = try? TrackerTemplate.create(project: "strado", title: "Strado", about: "Copy-trading layer, starting on Hyperliquid.", root: root) {
+        // A tracker Broski keeps for trailmix, so the Tracker tab and onboarding have something real to show.
+        if let tracker = try? TrackerTemplate.create(project: "trailmix", title: "Trailmix", about: "Copy-trading layer, starting on Hyperliquid.", root: root) {
             _ = try? TrackerTemplate.add(kind: "bug", title: "Fills arrive twice after a reconnect", severity: "high", tracker: tracker, root: root, date: ago(5))
             _ = try? TrackerTemplate.add(kind: "risk", title: "A leaked agent key loses the capital", severity: "crit", tracker: tracker, root: root, date: ago(30))
             _ = try? TrackerTemplate.add(kind: "task", title: "Backtest the copy rule on 2025 data", owner: "you", tracker: tracker, root: root, date: ago(10))
@@ -393,14 +399,14 @@ enum Snapshots {
             try? FileManager.default.createDirectory(at: tracker.appendingPathComponent("backtests"), withIntermediateDirectories: true)
             try? #"{"runs": []}"#.write(to: tracker.appendingPathComponent("backtests/results.json"), atomically: true, encoding: .utf8)
             let registry = ProjectRegistry(projects: [
-                .init(name: "Strado", notes: "strado", about: "Copy-trading layer, starting on Hyperliquid.",
-                      trackers: [TrackerSource(id: "strado", name: "Strado tracker", path: tracker.path, readOnly: false)]),
+                .init(name: "Trailmix", notes: "trailmix", about: "Copy-trading layer, starting on Hyperliquid.",
+                      trackers: [TrackerSource(id: "trailmix", name: "Trailmix tracker", path: tracker.path, readOnly: false)]),
             ])
             try? registry.save(to: root)
         }
-        if var session = try? store.startSession(kind: .qa, project: "strado", title: "Login flow on Safari", date: ago(1)) {
+        if var session = try? store.startSession(kind: .qa, project: "trailmix", title: "Login flow on Safari", date: ago(1)) {
             session = (try? store.append(text: "Login button overlaps the logo when the window is narrow", files: [shot],
-                                         context: ItemContext(app: "Safari", url: "https://staging.strado.app/login"), to: session, date: ago(0.9))) ?? session
+                                         context: ItemContext(app: "Safari", url: "https://staging.trailmix.app/login"), to: session, date: ago(0.9))) ?? session
             session = (try? store.append(text: "Error toast never disappears after a wrong password", files: [],
                                          context: ItemContext(app: "Safari"), to: session, date: ago(0.8))) ?? session
             _ = session

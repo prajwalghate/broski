@@ -151,12 +151,22 @@ final class PhoneStore: ObservableObject {
         let localOnly = localOnly
         return try await Ask.answer(question, index: index, catalog: catalog,
                                     pages: pages.values.filter { !localOnly.contains($0.project) },
-                                    client: Keychain.claudeKey.map { ClaudeClient(apiKey: $0) }, localOnly: localOnly)
+                                    gateway: hasModel ? gateway : nil, localOnly: localOnly)
     }
 
-    private static let unreadableConfig = "config.json on the Mac couldn't be read, so Claude is off for your projects until it's fixed."
+    /// Every model call goes through one gateway: the models your Mac chose (config.json), keys from this iPhone.
+    var gateway: ModelGateway {
+        ModelGateway(settings: models ?? .defaults, root: root, device: "iphone") { Keychain.key(forProvider: $0) }
+    }
 
-    /// Re-reads config.json; callers about to send a project's text to Claude call this first.
+    /// Some role has a model that can answer from this iPhone.
+    var hasModel: Bool {
+        ModelSetup.ready(models ?? .defaults, hasKey: { Keychain.key(forProvider: $0) != nil }, appleAvailable: PhoneHome.appleAvailable)
+    }
+
+    private static let unreadableConfig = "config.json on the Mac couldn't be read, so cloud models are off for your projects until it's fixed."
+
+    /// Re-reads config.json; callers about to send a project's text to a model call this first.
     func refreshLocalOnly() {
         let (names, readable, config) = Self.localOnlyProjects(in: root, projects: projects)
         localOnly = names

@@ -22,13 +22,6 @@ struct BroskiPhoneApp: App {
         _store = StateObject(wrappedValue: store)
         _capture = StateObject(wrappedValue: CaptureModel(store: store))
         _home = StateObject(wrappedValue: PhoneHome(store: store))
-        // Filing, Ask and reports (not yet through the model gateway) are logged with the rest.
-        ClaudeClient.onUsage = { model, task, usage in
-            Task { @MainActor in
-                try? UsageLog.append(UsageLog.Entry(device: "iphone", role: UsageLog.role(forModel: model), provider: "claude", model: model,
-                                                    project: nil, usage: usage, task: task ?? "other"), root: store.root)
-            }
-        }
         UNUserNotificationCenter.current().delegate = NotificationRouter.shared
     }
 

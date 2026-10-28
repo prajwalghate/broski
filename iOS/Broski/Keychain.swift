@@ -1,14 +1,11 @@
 import Foundation
 import Security
 
-/// The Claude key on the iPhone, in the Keychain (no password prompts on iOS).
+/// Model providers' keys on the iPhone, in the Keychain (no password prompts on iOS). Keys never sync.
 enum Keychain {
     private static let service = Bundle.main.bundleIdentifier ?? "broski"
     private static let account = "claude-api-key"
 
-    static var claudeKey: String? { Self.get(account) }
-
-    /// Another model's key ("model.<id>"), as on the Mac.
     static func get(_ account: String) -> String? {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                     kSecAttrAccount as String: account, kSecReturnData as String: true]
@@ -18,9 +15,15 @@ enum Keychain {
         return key
     }
 
-    static func setClaudeKey(_ key: String?) {
+    /// Where a provider's key is kept: Claude's under its first name, every other provider's as "model.<id>", as on the Mac.
+    static func account(forProvider id: String) -> String { id == "claude" ? account : "model.\(id)" }
+
+    static func key(forProvider id: String) -> String? { get(account(forProvider: id)) }
+
+    /// Saves a provider's key (nil or empty removes it).
+    static func setKey(_ key: String?, forProvider id: String) {
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                   kSecAttrAccount as String: account]
+                                   kSecAttrAccount as String: account(forProvider: id)]
         SecItemDelete(base as CFDictionary)
         guard let key = key?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
         var add = base

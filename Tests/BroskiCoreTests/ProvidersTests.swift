@@ -104,6 +104,32 @@ struct ProvidersTests {
         #expect(ModelRole.allCases.allSatisfy { local.roles[$0]?.model == "llama4:8b" && local.localRoles[$0]?.provider == "ollama" })
     }
 
+    @Test("connecting a preset again reuses its provider; another server gets its own id")
+    func providerIDs() {
+        var settings = ModelSettings.defaults
+        #expect(settings.providerID(for: .claude) == "claude")
+        #expect(settings.providerID(for: .openAI) == "openai")
+        settings = ProviderPreset.openAI.apply(to: settings, providerID: "openai", available: [])
+        #expect(settings.providerID(for: .openAI) == "openai")
+        // One added by hand before presets existed is recognized by its address.
+        settings.add(ModelProvider(id: "my-ollama", kind: .openAICompatible, baseURL: "http://localhost:11434/v1", local: true))
+        #expect(settings.providerID(for: .ollama) == "my-ollama")
+        #expect(settings.providerID(for: .custom) == "custom")
+        settings.add(ProviderPreset.custom.provider(id: "custom", baseURL: "https://llm.example.com/v1"))
+        #expect(settings.providerID(for: .custom) != "custom")
+    }
+
+    @Test("a server added by hand keeps its name, and takes local-only work when it runs on this Mac")
+    func customServer() {
+        var provider = ProviderPreset.custom.provider(id: "custom", baseURL: "http://127.0.0.1:8080/v1")
+        provider.name = "llama.cpp"
+        provider.local = true
+        let settings = ProviderPreset.custom.apply(to: .defaults, provider: provider, available: ["qwen3"])
+        #expect(settings.provider("custom")?.displayName == "llama.cpp")
+        #expect(settings.roles[.everyday]?.model == "qwen3" && settings.localRoles[.everyday]?.model == "qwen3")
+        #expect(!ModelProvider(id: "x", kind: .openAICompatible, baseURL: "https://llm.example.com/v1").needsKey)
+    }
+
     @Test("ready to talk: a cloud provider needs its key, a local one doesn't")
     func readiness() {
         let cloud = ProviderPreset.gemini.apply(to: ModelSettings(providers: [], roles: [:]), providerID: "gemini", available: [])

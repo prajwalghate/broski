@@ -3,7 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ["site/**", "docs/**", "**.md"]
   pull_request:
+    paths-ignore: ["site/**", "docs/**", "**.md"]
 
 # A newer push to the same branch cancels the run still going (macOS minutes are the expensive ones).
 concurrency:
@@ -16,12 +18,66 @@ permissions:
 jobs:
   build-and-test:
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Secret scan, build, unit tests, self-tests, iPhone app
+      - name: Secret scan, guardrails, build, unit tests, self-tests, chat check, iPhone app
         run: scripts/ci.sh --ios
+
+      - name: Build Broski.app (release)
+        run: scripts/build-app.sh
+
+      - name: Keep the app for the checks on older macOS
+        run: ditto -c -k --keepParent build/Broski.app Broski.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Broski-app
+          path: Broski.zip
+          retention-days: 3
+
+  # The app as people download it, on clean Macs running the oldest macOS it supports and the one after.
+  older-macos:
+    needs: build-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: Broski-app
+
+      - name: Unpack
+        run: ditto -x -k Broski.zip . && sw_vers
+
+      - name: The chat, off screen (keys, scrolling, the message box)
+        run: |
+          report="$RUNNER_TEMP/chat.txt"
+          if ! Broski.app/Contents/MacOS/Broski --chat-check "$report"; then cat "$report"; exit 1; fi
+          tail -1 "$report"
+
+      - name: A first run's empty Broski folder reads cleanly
+        run: |
+          Broski.app/Contents/MacOS/Broski --check-folder "$RUNNER_TEMP/folder.json"
+          cat "$RUNNER_TEMP/folder.json"
+
+      - name: Every screen renders
+        run: |
+          Broski.app/Contents/MacOS/Broski --snapshot "$RUNNER_TEMP/shots"
+          count=$(find "$RUNNER_TEMP/shots" -name '*.png' | wc -l)
+          echo "$count screenshots"
+          [[ "$count" -ge 100 ]]
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: screens-${{ matrix.os }}
+          path: ${{ runner.temp }}/shots
+          retention-days: 7

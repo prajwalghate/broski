@@ -1,0 +1,47 @@
+name: Release
+
+# Push a tag named after the Mac version (git tag v0.11.0 && git push origin v0.11.0): CI runs again, then the app
+# is built, zipped with its SHA-256 checksum, and attached to a GitHub release with that version's CHANGELOG entry.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Everything CI runs
+        run: scripts/ci.sh --ios
+
+      - name: Build Broski.app (release)
+        run: scripts/build-app.sh
+
+      - name: Zip, checksum and release notes
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' build/Broski.app/Contents/Info.plist)
+          if [[ "v$version" != "$GITHUB_REF_NAME" ]]; then
+            echo "The tag $GITHUB_REF_NAME doesn't match the app's version $version."
+            exit 1
+          fi
+          ditto -c -k --keepParent build/Broski.app "Broski-$version.zip"
+          shasum -a 256 "Broski-$version.zip" > "Broski-$version.zip.sha256"
+          awk -v v="Mac $version," '
+            index($0, "## ") == 1 { if (found) exit; found = index($0, v) > 0; next }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          printf '\nNot notarized yet: the first time, open it from System Settings › Privacy & Security › Open Anyway.\nCheck the download: shasum -a 256 -c Broski-%s.zip.sha256\n' "$version" >> notes.md
+          cat notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" Broski-*.zip Broski-*.zip.sha256 --title "Broski $GITHUB_REF_NAME" --notes-file notes.md --verify-tag

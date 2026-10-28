@@ -5,7 +5,7 @@ import Speech
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable {
-    case general, projects, voice, ai, models, companion, connections, about
+    case general, projects, voice, models, companion, connections, about
 }
 
 struct SettingsView: View {
@@ -18,34 +18,35 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("", selection: $tab) {
-                ForEach(SettingsTab.allCases, id: \.self) { Text($0.title).tag($0) }
+        HStack(spacing: 0) {
+            List(selection: Binding(get: { Optional(tab) }, set: { if let new = $0 { tab = new } })) {
+                ForEach(SettingsTab.allCases, id: \.self) { item in
+                    Label(item.title, systemImage: item.symbol).tag(item)
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 600)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-            switch tab {
-            case .general: GeneralSettings(app: app)
-            case .projects: ProjectSettings(app: app)
-            case .voice: VoiceSettings(app: app)
-            case .ai: AISettings(app: app, brain: app.brain)
-            case .models: ModelsSettings(app: app)
-            case .companion: CompanionSettings(app: app)
-            case .connections: ConnectionSettings(app: app)
-            case .about: AboutSettings(app: app)
+            .listStyle(.sidebar)
+            .frame(width: 180)
+            Divider()
+            Group {
+                switch tab {
+                case .general: GeneralSettings(app: app)
+                case .projects: ProjectSettings(app: app)
+                case .voice: VoiceSettings(app: app)
+                case .models: ModelsSettings(app: app)
+                case .companion: CompanionSettings(app: app)
+                case .connections: ConnectionSettings(app: app)
+                case .about: AboutSettings(app: app)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 640, height: 520)
+        .frame(width: 820, height: 580)
     }
 }
 
 extension SettingsTab {
     var title: String {
         switch self {
-        case .ai: return "AI"
         case .models: return "Models"
         case .companion: return "Companion"
         case .connections: return "Connections"
@@ -53,6 +54,18 @@ extension SettingsTab {
         case .projects: return "Projects"
         case .voice: return "Voice"
         case .about: return "About"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: return "gearshape"
+        case .projects: return "folder"
+        case .voice: return "waveform"
+        case .models: return "cpu"
+        case .companion: return "person.crop.circle"
+        case .connections: return "link"
+        case .about: return "info.circle"
         }
     }
 }
@@ -285,10 +298,6 @@ private struct ProjectSettings: View {
                         Text((app.root.path as NSString).abbreviatingWithTildeInPath).foregroundStyle(.secondary)
                         Button("Show in Finder") { NSWorkspace.shared.open(app.root) }
                     }
-                }
-                Toggle(isOn: app.binding(\.mirrorToProjectFolder)) {
-                    Text("Also write notes to IDEAS.md in each project's folder")
-                    Text("Handy if you want Claude Code or your editor to see them inside the repo.")
                 }
             }
         }
@@ -608,59 +617,18 @@ struct VoiceModelRow: View {
     }
 }
 
-// MARK: AI
+// MARK: Coding agents
 
-private struct AISettings: View {
-    @ObservedObject var app: AppModel
-    @ObservedObject var brain: Brain
-    @State private var key = ""
-    @State private var status: String?
-    @State private var checking = false
-
-    private func save() {
-        guard !key.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        brain.setKey(key, for: "claude")
-        key = ""
-        check()
-    }
-
+/// Connecting Broski's MCP server to Claude Code, Claude Desktop and other MCP apps.
+private struct AgentConnectSection: View {
     var body: some View {
-        Form {
-            Section {
-                LabeledContent("Claude API key") {
-                    HStack {
-                        SecureField(brain.hasModel ? "Saved on this Mac" : "sk-ant-…", text: $key)
-                            .frame(width: 240)
-                            .onSubmit(save)
-                        Button("Save", action: save)
-                        .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                }
-                if brain.hasModel {
-                    HStack {
-                        Button(checking ? "Checking…" : "Test the key") { check() }.disabled(checking)
-                        Button("Remove key", role: .destructive) {
-                            brain.setKey(nil, for: "claude")
-                            status = nil
-                        }
-                        Spacer()
-                        if let status { Text(status).foregroundStyle(status == "Working" ? Color.green : Color.red).font(.system(size: 12)) }
-                    }
-                }
-                Link("Get a key at console.anthropic.com", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
-                    .font(.system(size: 12))
-            } header: {
-                Text("Claude")
-            } footer: {
-                Text("With a key, Claude files what you capture, keeps each project's living page, answers Ask Broski, riffs with you, and writes session and call notes. Routine filing uses Claude Haiku (cheap); pages and answers use Sonnet; riffs use Opus. Only text (and screenshots you share) goes to Anthropic; audio stays on your Mac. Projects marked local only never go to Claude.")
-            }
             Section {
                 LabeledContent {
                     Button(connecting ? "Connecting…" : "Connect") { connectClaudeCode() }
                         .disabled(connecting)
                 } label: {
                     Text("Claude Code")
-                    Text("Lets Claude Code read your Broski notes: project pages, open bugs, search. Read-only.")
+                    Text("Lets Claude Code read your Broski notes (project pages, open bugs, search) and update only the trackers Broski keeps. Local-only projects stay hidden.")
                 }
                 if let connectResult {
                     Text(connectResult).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
@@ -676,10 +644,8 @@ private struct AISettings: View {
                     Text("Paste into the app's MCP servers config (claude_desktop_config.json for Claude Desktop).")
                 }
             } header: {
-                Text("Use your notes in Claude")
+                Text("Your notes in Claude Code and other MCP apps")
             }
-        }
-        .formStyle(.grouped)
     }
 
     @State private var connecting = false
@@ -775,15 +741,6 @@ private struct AISettings: View {
             }
         }
     }
-
-    private func check() {
-        checking = true
-        Task {
-            let problem = await brain.check("claude")
-            status = problem ?? "Working"
-            checking = false
-        }
-    }
 }
 
 // MARK: Connections
@@ -795,6 +752,7 @@ private struct ConnectionSettings: View {
 
     var body: some View {
         Form {
+            AgentConnectSection()
             Section {
                 LabeledContent("Incoming webhook") {
                     HStack {

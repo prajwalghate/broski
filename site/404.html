@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Page not found · Broski</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#FFFDF8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141417" media="(prefers-color-scheme: dark)">
+  <!-- Absolute links: this page is served for missing paths at any depth. The Pages workflow fills in __SITE__. -->
+  <link rel="icon" type="image/png" sizes="64x64" href="__SITE__/assets/icon-64.png">
+  <link rel="apple-touch-icon" href="__SITE__/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="__SITE__/styles.css">
+</head>
+<body>
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <symbol id="spark" viewBox="0 0 24 24"><path d="M12 1C13.76 10.24 13.76 10.24 23 12 13.76 13.76 13.76 13.76 12 23 10.24 13.76 10.24 13.76 1 12 10.24 10.24 10.24 10.24 12 1Z"/></symbol>
+</svg>
+<main class="notfound">
+  <div class="notfound-inner">
+    <svg class="deco deco-spark" aria-hidden="true" focusable="false"><use href="#spark"/></svg>
+    <img src="__SITE__/assets/icon-256.png" width="120" height="120" alt="">
+    <h1>This page isn't here</h1>
+    <p>The link may be old, or it has a typo. Everything about Broski starts on the home page.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="__SITE__/">Go to the home page</a>
+      <a class="btn btn-secondary" href="__REPO__/tree/main/docs">Read the docs</a>
+    </div>
+  </div>
+</main>
+</body>
+</html>

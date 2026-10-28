@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Broski",
-    platforms: [.macOS(.v13), .iOS(.v17)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         // Shared with the iPhone app (iOS/project.yml).
         .library(name: "BroskiCore", targets: ["BroskiCore"]),

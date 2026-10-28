@@ -71,7 +71,12 @@ quit_broski() {
   for _ in $(seq 1 50); do [[ -z "$(gui_pids)" ]] && return 0; sleep 0.2; done
   kill -9 $(gui_pids) 2>/dev/null || true
 }
-started() { [[ -f "$log" ]] && grep -c "Broski $(plist "$1" CFBundleShortVersionString) started from $DEST" "$log" 2>/dev/null || echo 0; }
+# How many times the log says this version started from /Applications (grep -c prints 0 and fails on none).
+started() {
+  local count
+  count="$(grep -c "Broski $(plist "$1" CFBundleShortVersionString) started from $DEST" "$log" 2>/dev/null)" || true
+  echo "${count:-0}"
+}
 
 before="$(started "$NEW")"
 quit_broski
