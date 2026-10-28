@@ -19,13 +19,29 @@ public enum WhisperError: LocalizedError {
     }
 }
 
-/// Downloadable ggml Whisper models, hosted on Hugging Face.
+/// Downloadable ggml Whisper models, hosted on Hugging Face. https://huggingface.co/ggerganov/whisper.cpp
+/// Every file is pinned to one commit, its size and its SHA-256, so what runs is what was measured.
 public enum WhisperModel: String, CaseIterable, Sendable {
     case largeV3TurboQ5
     case smallQ5
     case baseEn
 
     public static let `default`: WhisperModel = .largeV3TurboQ5
+
+    /// The repository's commit of 2024-10-29.
+    static let commit = "5359861c739e955e79d9a303bcbc70fb988958b1"
+
+    /// What the download must be, checked before it's kept (PinnedFile.accept).
+    public var pinned: PinnedFile {
+        switch self {
+        case .largeV3TurboQ5:
+            return PinnedFile(name: fileName, size: 574_041_195, sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2")
+        case .smallQ5:
+            return PinnedFile(name: fileName, size: 190_085_487, sha256: "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb")
+        case .baseEn:
+            return PinnedFile(name: fileName, size: 147_964_211, sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002")
+        }
+    }
 
     public var fileName: String {
         switch self {
@@ -56,7 +72,7 @@ public enum WhisperModel: String, CaseIterable, Sendable {
     public var isEnglishOnly: Bool { self == .baseEn }
 
     public var downloadURL: URL {
-        URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(fileName)")!
+        URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/\(Self.commit)/\(fileName)")!
     }
 
     /// ~/Library/Application Support/Broski/models/
@@ -66,7 +82,8 @@ public enum WhisperModel: String, CaseIterable, Sendable {
     }
 
     public var localURL: URL { Self.directory.appendingPathComponent(fileName) }
-    public var isDownloaded: Bool { FileManager.default.fileExists(atPath: localURL.path) }
+    /// The model is there at its pinned size. (The hash is checked once, when the download lands.)
+    public var isDownloaded: Bool { pinned.isInPlace(at: localURL) }
 }
 
 /// One loaded whisper.cpp model. Whisper contexts aren't thread-safe, so every call runs on a

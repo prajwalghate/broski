@@ -109,19 +109,34 @@ final class Transcription: NSObject, ObservableObject, URLSessionDownloadDelegat
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         // The temporary file disappears when this returns, so move it now.
-        let target = WhisperModel.largeV3TurboQ5.localURL
-        let staged = target.appendingPathExtension("part")
+        let model = WhisperModel.largeV3TurboQ5
+        let staged = model.localURL.appendingPathExtension("part")
         try? FileManager.default.removeItem(at: staged)
         let moved = (try? FileManager.default.moveItem(at: location, to: staged)) != nil
+        let ok = (downloadTask.response as? HTTPURLResponse)?.statusCode == 200
+        let id = downloadTask.taskIdentifier
         Task { @MainActor in
+            var installed: Result<Void, Error>?
+            if moved, ok {
+                // Only the pinned file is installed; hashing its 574 MB stays off the main thread.
+                installed = await Task.detached { Result { try model.pinned.install(staged, at: model.localURL) } }.value
+            }
+            try? FileManager.default.removeItem(at: staged)
+            // Cancelled or started again while it was checked: that wins, unless the model is now in place.
+            guard self.download?.taskIdentifier == id else {
+                if self.download == nil, model.isDownloaded { self.state = .ready; self.warmUp() }
+                return
+            }
             self.download = nil
-            let ok = (downloadTask.response as? HTTPURLResponse)?.statusCode == 200
-            if moved, ok, (try? FileManager.default.moveItem(at: staged, to: target)) != nil {
+            switch installed {
+            case .success?:
                 self.state = .ready
                 Log.info("Whisper model ready")
                 self.warmUp()
-            } else {
-                try? FileManager.default.removeItem(at: staged)
+            case .failure(let error as PinnedFile.Mismatch)?:
+                Log.info("Whisper download refused: \(error.localizedDescription)")
+                self.state = .failed("The download didn't match the expected file, so it was deleted. Try again.")
+            default:
                 self.state = .failed("The download didn't finish. Try again.")
             }
         }
