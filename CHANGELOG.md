@@ -2,9 +2,22 @@
 
 All notable changes to Broski are in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Mac app and the iPhone app have their own version numbers; each entry names the ones that changed. The iPhone stayed at 0.6.0 while Mac 0.9.1 to 0.9.6 shipped, so iPhone changes in those releases are listed under the Mac version.
 
-## Mac 0.11.2, iPhone 0.7.1 - 2026-10-28
+## Mac 0.11.3, iPhone 0.7.2 - 2026-10-28
 
 The first public release. Broski is a companion you talk to about your projects: press ⌥⇧B, talk or type, and it remembers what you've told it, thinks with you, and saves decisions and todos only when you tap Save. It works with the AI you choose (Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, a model on your Mac, or Apple's on-device model), and your notes are plain files you own. It needs macOS 14 or later on Apple silicon. See the README for what it does and [Getting started](docs/getting-started.md) for the first run; the entries below say what changed in each version.
+
+### Changed
+
+- The conversation's header says which provider is replying ("Everyday · OpenAI"), or "No model" until you choose one; click it to change models. The note panel names your provider instead of assuming Claude.
+- First run: the card to choose a model comes after Broski's hello, and the welcome says plainly that replies come from the AI you choose.
+- Tidier screens: header buttons have labels for VoiceOver, the keyboard hints show only at the start of a conversation, a riff has one Wrap up button, and "Riff on this" is the same everywhere.
+
+### Fixed
+
+- What Broski knows no longer lists a fact twice when you (or two devices) said it twice.
+- The release workflow no longer stops early on GitHub's runners.
+
+## Mac 0.11.2, iPhone 0.7.1 - 2026-10-28
 
 ### Fixed
 

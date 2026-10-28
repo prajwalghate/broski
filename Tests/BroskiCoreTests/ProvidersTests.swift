@@ -119,6 +119,14 @@ struct ProvidersTests {
         #expect(settings.providerID(for: .custom) != "custom")
     }
 
+    @Test("the screens name the provider a role runs on, never an assumed one")
+    func roleProviderName() {
+        #expect(ModelSettings.defaults.providerName(for: .fast) == "Claude")
+        let openAI = ProviderPreset.openAI.apply(to: .defaults, providerID: "openai", available: [])
+        #expect(openAI.providerName(for: .everyday) == "OpenAI")
+        #expect(ModelSettings(providers: [], roles: [:]).providerName(for: .deep) == nil)
+    }
+
     @Test("a server added by hand keeps its name, and takes local-only work when it runs on this Mac")
     func customServer() {
         var provider = ProviderPreset.custom.provider(id: "custom", baseURL: "http://127.0.0.1:8080/v1")

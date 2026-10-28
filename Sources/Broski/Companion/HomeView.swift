@@ -118,7 +118,12 @@ final class HomeModel: ObservableObject {
         if let thread { topic = thread }
     }
 
-    var modelLabel: String { riffing ? "Riff" : deep ? "Deep" : "Everyday" }
+    /// "Everyday · OpenAI": what's replying, and on which provider; "No model" until one is chosen.
+    var modelLabel: String {
+        if needsModel { return "No model" }
+        let name = (config().models ?? .defaults).providerName(for: riffing || deep ? .deep : .everyday)
+        return (riffing ? "Riff" : deep ? "Deep" : "Everyday") + (name.map { " · \($0)" } ?? "")
+    }
 
     /// Riff mode is on: from its start marker in the conversation until it's wrapped up, so it survives a restart.
     var riffing: Bool { RiffMode.active(turns: isPrivate ? privateTurns : turns) }
@@ -765,23 +770,31 @@ struct HomeView: View {
                     .font(.system(size: 11)).foregroundStyle(model.isPrivate ? Self.privateText : .secondary)
             }
             Spacer()
-            Text(model.modelLabel)
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .overlay(Capsule().stroke(Color.secondary.opacity(0.5)))
-                .padding(1)
-                .foregroundStyle(Brand.purple)
-                .help(model.riffing ? "Riffing: brainstorming on the deep model, by the rules"
-                      : model.deep ? "Replies come from the deep model" : "Replies come from the everyday model")
+            Button {
+                ModelsSettings.openChooserNext = model.needsModel
+                model.openSettings(.models)
+            } label: {
+                Text(model.modelLabel)
+                    .font(.system(size: 11, weight: .medium))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .overlay(Capsule().stroke(Color.secondary.opacity(0.5)))
+                    .padding(1)
+                    .foregroundStyle(model.needsModel ? Color.orange : Brand.purple)
+            }
+            .buttonStyle(.plain)
+            .help(model.needsModel ? "Choose a model to talk to"
+                  : model.riffing ? "Riffing: brainstorming on the deep model, by the rules. Click to change models."
+                  : model.deep ? "Replies come from the deep model. Click to change models." : "Replies come from the everyday model. Click to change models.")
             voiceMenu
             if model.project != nil {
                 Button { model.openProjectFolder() } label: { Image(systemName: "folder") }
                     .buttonStyle(.borderless).help("Open the project's folder: resources, setup drafts, tracker")
+                    .accessibilityLabel("Open the project's folder")
             }
             Button(action: openMemory) { Image(systemName: "book") }
-                .buttonStyle(.borderless).help("What Broski knows")
+                .buttonStyle(.borderless).help("What Broski knows").accessibilityLabel("What Broski knows")
             Button(action: openDashboard) { Image(systemName: "square.grid.2x2") }
-                .buttonStyle(.borderless).help("Open the dashboard")
+                .buttonStyle(.borderless).help("Open the dashboard").accessibilityLabel("Open the dashboard")
             Button { model.toggleRiff() } label: {
                 Image(systemName: model.riffing ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
                     .foregroundStyle(model.riffing ? Brand.purple : .secondary)
@@ -790,11 +803,13 @@ struct HomeView: View {
             .disabled(model.thinking)
             .help(model.riffing ? "Wrap up the riff: what came of it, as one card to save"
                   : "Riff: brainstorm by the rules (yours too). Or say “let's riff about …”")
+            .accessibilityLabel(model.riffing ? "Wrap up the riff" : "Start a riff")
             Button { model.togglePrivate() } label: {
                 Image(systemName: model.isPrivate ? "lock.fill" : "lock").foregroundStyle(model.isPrivate ? Self.privateText : .secondary)
             }
             .buttonStyle(.borderless)
             .help(model.isPrivate ? "Leave private mode" : "Go private: Broski starts blank and keeps nothing")
+            .accessibilityLabel(model.isPrivate ? "Leave private mode" : "Go private")
         }
         .padding(12)
     }
@@ -925,7 +940,6 @@ struct HomeView: View {
             ScrollView {
                 // Not lazy: rows of text measured as they scroll into view make the scroll bar and position jump.
                 VStack(alignment: .leading, spacing: 14) {
-                    if model.needsModel && !model.isPrivate { modelSetup }
                     if model.visibleTurns.isEmpty {
                         Text(model.isPrivate
                              ? "A blank slate. Nothing you say here is kept unless you choose to keep it."
@@ -936,6 +950,7 @@ struct HomeView: View {
                     ForEach(model.visibleTurns) { turn in
                         row(turn).id(turn.id)
                     }
+                    if model.needsModel && !model.isPrivate { modelSetup }
                     if model.thinking {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
@@ -1025,7 +1040,7 @@ struct HomeView: View {
     /// No model yet: choose one (a cloud model with your key, or one on this Mac), or Apple's in one tap.
     private var modelSetup: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("CHOOSE A MODEL TO TALK TO").font(.system(size: 10, weight: .semibold)).foregroundStyle(Brand.purple)
+            Text("Choose a model to talk to").font(.system(size: 13, weight: .semibold))
             Text("Broski needs a model to reply: a cloud one with your own key (Claude, OpenAI, Gemini and others), or one that runs on this Mac and keeps everything here.")
                 .font(.system(size: 13))
                 .fixedSize(horizontal: false, vertical: true)
@@ -1042,7 +1057,7 @@ struct HomeView: View {
             .controlSize(.small)
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 12).stroke(Brand.purple.opacity(0.35)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
     }
 
     @ViewBuilder private func row(_ turn: Turn) -> some View {
@@ -1076,7 +1091,7 @@ struct HomeView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if turn.device != "mac" {
-                    Text("on your iPhone").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("on your iPhone").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 if let files = turn.files, !files.isEmpty {
                     HStack(spacing: 6) {
@@ -1198,7 +1213,6 @@ struct HomeView: View {
                         chip(move.name) { model.send(move.ask) }
                         .help(move.ask)
                     }
-                    chip("Wrap up") { model.endRiff() }
                 } else {
                 chip("Save that") { model.suggestSave(force: true) }
                 chip(model.deep ? "Back to everyday" : "Think harder") { model.deep.toggle() }
@@ -1304,9 +1318,11 @@ struct HomeView: View {
                     .menuStyle(.borderlessButton).fixedSize()
                     .help("Show one thread of the conversation")
                 }
-                Text("Return sends · Shift-Return new line · Esc stops · hold fn to talk")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                    .help("“note: …” saves without a reply · Up brings back your last message · paste or drop files and images")
+                if model.visibleTurns.count < 4 {
+                    Text("Return sends · Shift-Return new line · Esc stops · hold fn to talk")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        .help("“note: …” saves without a reply · Up brings back your last message · paste or drop files and images")
+                }
             }
         }
         .padding(12)

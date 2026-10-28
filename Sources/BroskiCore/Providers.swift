@@ -155,6 +155,11 @@ public struct ProviderPreset: Equatable, Identifiable, Sendable {
 }
 
 extension ModelSettings {
+    /// The name of the provider `role` runs on ("OpenAI", "Ollama"), for labels; nil when no model is chosen.
+    public func providerName(for role: ModelRole) -> String? {
+        roles[role].flatMap { provider($0.provider) }?.displayName
+    }
+
     /// The id to connect `preset` under: the provider already made from it (connecting again updates it), else the
     /// preset's own id, else a new one. Every server added by hand gets its own.
     public func providerID(for preset: ProviderPreset) -> String {

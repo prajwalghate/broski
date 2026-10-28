@@ -198,11 +198,13 @@ public enum Memory {
     /// What's still remembered from conversations, oldest first.
     public static func remembered(root: URL) -> [String] {
         var facts: [String] = []
+        // Once each, whatever the case: two devices can remember the same thing, each in its own file.
+        func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
         for event in events(root: root) {
             if event.op == "remember" {
-                facts.append(event.text)
+                if !facts.contains(where: { same($0, event.text) }) { facts.append(event.text) }
             } else if event.op == "forget" {
-                facts.removeAll { $0 == event.text }
+                facts.removeAll { same($0, event.text) }
             }
         }
         return facts
@@ -214,7 +216,7 @@ public enum Memory {
 
     public static func remember(_ fact: String, root: URL, device: String, at: Date = Date(), by: String? = nil, why: String? = nil) throws {
         let text = fact.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty, !remembered(root: root).contains(where: { $0.caseInsensitiveCompare(text) == .orderedSame }) else { return }
         try append(Event(at: at, device: device, op: "remember", text: text, by: by, why: why), root: root)
     }
 

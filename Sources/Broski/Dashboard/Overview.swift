@@ -255,7 +255,7 @@ struct ActionCard: View {
             result = "Raised to high"
         case .claudePrompt:
             Exporter.copy(action.detail.isEmpty ? action.title : action.detail)
-            result = "Copied. Paste it into Claude Code."
+            result = "Copied. Paste it into your coding agent (Claude Code, Codex, Cursor)."
             return
         case .decide:
             BroskiUI.app?.showRiff(project: project, opening: action.title + (action.detail.isEmpty ? "" : "\n\n" + action.detail))

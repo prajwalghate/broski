@@ -16,6 +16,9 @@ final class Brain: ObservableObject {
         didSet { refresh() }
     }
 
+    /// The provider filing runs on ("OpenAI", "Ollama"), for labels.
+    var fastProviderName: String? { makeGateway()?.settings.providerName(for: .fast) }
+
     /// The gateway, when there's a model to talk to.
     var gateway: ModelGateway? { hasModel ? makeGateway() : nil }
 
