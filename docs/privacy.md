@@ -50,9 +50,9 @@ Mark a project local only (Settings › Companion › Living pages and privacy) 
 
 ## Private mode
 
-Say "go private" for a blank slate. In private mode Broski doesn't read what it knows about you, your projects, decisions or notes, and recalls nothing. The conversation is kept in memory only: nothing from it is written to disk unless you ask (saying "note: …" still saves that note), files you share aren't copied, "remember that …" is refused, and Broski doesn't offer save cards. When you leave, you choose to keep it (it's added to the conversation and its files are copied into the project's resources) or let it go.
+Say "go private" for a blank slate. In private mode Broski doesn't read what it knows about you, your projects, decisions or notes, and recalls nothing. The conversation is kept in memory only: nothing from it is written to disk unless you ask (saying "note: …" still saves that note), files you share aren't copied, "remember that …" is refused, and a save card comes only when you say "save that": it's drawn from the private conversation alone, and nothing is saved unless you tap Save. When you leave, you choose to keep it (it's added to the conversation and its files are copied into the project's resources) or let it go.
 
-Private mode is about what Broski keeps and reads, not where the reply comes from: your messages still go to your everyday model (or the deep one after "think harder"). If that's a cloud model, what you say in private mode goes to it, without the rest of your context. For text that must stay on your device, use a local model or a local-only project.
+Private mode is about what Broski keeps and reads, not where the reply comes from: your messages still go to your everyday model (or the deep one after "think harder"), and "save that" to your fast one. If that's a cloud model, what you say in private mode goes to it, without the rest of your context. For text that must stay on your device, use a local model or a local-only project.
 
 ## Links you share
 
