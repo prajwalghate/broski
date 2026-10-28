@@ -57,7 +57,7 @@ To start an overlay from the manifest Broski uses today, export it (all on one l
 
 Every read checks for drift: files no mapping reads, mappings that find nothing, status words nobody mapped, and new threads. The Tracker tab says so, and **Ask the threads** asks only about what changed.
 
-Every change Broski sees between reads (findings opened or closed, decisions made, steps attested) goes into a per-project change stream, `projects/<p>/stream.jsonl`. Claude Code reads it with `changes_since`, and automations act on it.
+Every change Broski sees between reads (findings opened or closed, decisions made, steps attested) goes into a per-project change stream, `projects/<p>/stream.<device>.jsonl` (each device writes its own; the shared `stream.jsonl` older versions wrote is still read). Claude Code reads it with `changes_since`, and automations act on it.
 
 ### Waiting on you
 
@@ -117,7 +117,7 @@ trackers/<id>.broski.json           how to read a tracker (written only when you
 trackers/<id>.broski.draft.json     a draft waiting for your review
 trackers/state/<id>.json            what a tracker held at its last read, to tell what changed
 projects/<p>/tracker/               a tracker Broski keeps, for projects that have none
-projects/<p>/stream.jsonl           what changed in the project's trackers, read after read
+projects/<p>/stream.<device>.jsonl  what changed in the project's trackers, read after read
 projects/<p>/onboarding/<run>/      a run's questions, prompts, the threads' answers and CHECK.md
 packs/<id>.json                     your own packs
 ```

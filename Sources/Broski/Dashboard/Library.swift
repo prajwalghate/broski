@@ -220,7 +220,7 @@ final class Library: ObservableObject {
                     let snap = TrackerReader.snapshot(source, project: project, overlays: overlays)
                     // What changed since the last read, into Broski's own folder, here off the main thread. Local-only
                     // projects are recorded too: the stream never leaves the Mac, and Claude is never shown theirs.
-                    if source.scope == .tracker { ChangeStream.update(with: snap, project: project, root: root) }
+                    if source.scope == .tracker { ChangeStream.update(with: snap, project: project, root: root, device: "mac") }
                     return snap
                 }
             }.value

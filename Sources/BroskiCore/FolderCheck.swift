@@ -19,7 +19,7 @@ public enum FolderCheck {
     public struct Report: Codable, Equatable, Sendable {
         public var v = 1
         public var root: String
-        /// config, projects, conversations, usage, memory, riff rules, notes, vault.
+        /// config, projects, conversations, usage, memory, riff rules, notes, change stream, vault.
         public var formats: [String: Format]
         /// What's wrong enough to stop an install (a config.json that doesn't parse).
         public var problems: [String]
@@ -54,6 +54,7 @@ public enum FolderCheck {
         formats["memory"] = lines(Memory.Event.self, in: jsonl(under: memory).filter { $0.lastPathComponent.hasPrefix("remembered.") })
         formats["riff rules"] = lines(RiffMode.Event.self, in: jsonl(under: memory).filter { $0.lastPathComponent.hasPrefix("riff-rules.") })
         formats["notes"] = notes(root)
+        formats["change stream"] = lines(ChangeEvent.self, in: ChangeStream.streamFiles(root: root, project: nil), decoder: ChangeStream.decoder())
         return Report(root: root.path, formats: formats, problems: problems)
     }
 
@@ -64,7 +65,7 @@ public enum FolderCheck {
         return files.filter { $0.pathExtension == "jsonl" }.sorted { $0.path < $1.path }
     }
 
-    static func lines<T: Decodable>(_ type: T.Type, in files: [URL]) -> Format {
+    static func lines<T: Decodable>(_ type: T.Type, in files: [URL], decoder: JSONDecoder = JSONLines.decoder) -> Format {
         var format = Format(files: files.count)
         for url in files {
             guard let text = try? String(contentsOf: url, encoding: .utf8) else {
@@ -72,7 +73,7 @@ public enum FolderCheck {
                 continue
             }
             for line in text.split(separator: "\n") where !line.trimmingCharacters(in: .whitespaces).isEmpty {
-                if (try? JSONLines.decoder.decode(T.self, from: Data(line.utf8))) != nil { format.read += 1 } else { format.unreadable += 1 }
+                if (try? decoder.decode(T.self, from: Data(line.utf8))) != nil { format.read += 1 } else { format.unreadable += 1 }
             }
         }
         return format

@@ -629,26 +629,26 @@ do {
 
     // Stored in Broski's folder only, and read back.
     let root = base.appendingPathComponent("BroskiRoot", isDirectory: true)
-    try ChangeStream.append(events, root: root, project: "acme")
+    try ChangeStream.append(events, root: root, project: "acme", device: "mac")
     check(ChangeStream.read(root: root, project: "acme", since: .distantPast) == events, "stream: append and read round-trip")
     let later = ChangeEvent(at: at.addingTimeInterval(3600), project: "trader", source: "trader", kind: "status", id: "trader:T-1",
                             title: "Backtest", from: "open", to: "doing")
-    try ChangeStream.append([later], root: root, project: "trader")
+    try ChangeStream.append([later], root: root, project: "trader", device: "mac")
     check(ChangeStream.read(root: root, project: "acme", since: at.addingTimeInterval(60)).isEmpty, "stream: since leaves out older events")
     check(ChangeStream.read(root: root, project: nil, since: at.addingTimeInterval(60)) == [later] && ChangeStream.read(root: root, project: nil).count == events.count + 1,
           "stream: every project's stream when no project is named")
-    check(fm.fileExists(atPath: root.appendingPathComponent("projects/acme/stream.jsonl").path)
-          && !((fm.enumerator(atPath: one.path)?.allObjects as? [String]) ?? []).contains { $0.hasSuffix("stream.jsonl") || $0.contains("state") },
+    check(fm.fileExists(atPath: root.appendingPathComponent("projects/acme/stream.mac.jsonl").path)
+          && !((fm.enumerator(atPath: one.path)?.allObjects as? [String]) ?? []).contains { $0.contains("stream.") || $0.contains("state") },
           "stream: written in Broski's folder, never the tracker's")
     try ChangeStream.saveState(state1, root: root, source: "acme")
     check(ChangeStream.loadState(root: root, source: "acme") == state1, "stream: the last state reloads")
     check(ChangeStream.stateFile(root: root, source: "tamer/Tamer").lastPathComponent == "tamer__Tamer.json", "stream: state files named like overlays")
-    check(ChangeStream.update(with: snap1, project: "acme", root: root).isEmpty, "stream: an unchanged read records nothing")
+    check(ChangeStream.update(with: snap1, project: "acme", root: root, device: "mac").isEmpty, "stream: an unchanged read records nothing")
     let missing = TrackerReader.snapshot(TrackerSource(id: "acme", name: "Acme", path: base.appendingPathComponent("gone").path), project: "acme", overlays: overlays)
-    check(ChangeStream.update(with: missing, project: "acme", root: root).isEmpty && ChangeStream.loadState(root: root, source: "acme") == state1,
+    check(ChangeStream.update(with: missing, project: "acme", root: root, device: "mac").isEmpty && ChangeStream.loadState(root: root, source: "acme") == state1,
           "stream: a tracker folder missing for a moment isn't every record removed")
     try put(one, "tracker/findings/ACME-3.md", finding("ACME-3", "solved"))
-    let update = ChangeStream.update(with: TrackerReader.snapshot(source, project: "acme", overlays: overlays), project: "acme", root: root, at: at)
+    let update = ChangeStream.update(with: TrackerReader.snapshot(source, project: "acme", overlays: overlays), project: "acme", root: root, device: "mac", at: at)
     check(update.map(\.kind) == ["closed"] && ChangeStream.read(root: root, project: "acme").count == events.count + 1, "stream: update diffs, appends and saves")
 
     // Delta runs: each kind of drift asks its own questions, of its own thread.
