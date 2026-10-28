@@ -158,12 +158,13 @@ struct AskView: View {
                         Spacer()
                         if let saved = model.saved { Text(saved).font(.system(size: 11)).foregroundStyle(.green) }
                         Button("Save as note") { model.saveAsNote() }
-                        Button("Keep thinking") {
+                        Button("Riff on this") {
                             model.onRiff(model.answer?.sources.first?.project, "Q: \(model.question)\n\nBroski: \(answer.markdown)")
                         }
                         // An answer without AI is a listing, kept on the Mac (a local-only project, no key).
                         .disabled(!model.library.brain.hasModel || !answer.usedAI)
-                        .help("Continue as a riff")
+                        .help(model.library.brain.hasModel ? (answer.usedAI ? "Keep thinking about this in a riff" : "This answer stayed on this Mac, so it can't go to a riff")
+                              : "Choose a model in Settings › Models to riff")
                     }
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .medium))

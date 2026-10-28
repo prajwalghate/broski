@@ -115,7 +115,8 @@ struct MemoryView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 340)
+            .fixedSize()
+            .frame(maxWidth: .infinity)
             .padding(14)
             Divider()
             ScrollView {
@@ -140,7 +141,8 @@ struct MemoryView: View {
         Text("Broski reads this at the start of every conversation (never in private mode).")
             .font(.system(size: 12)).foregroundStyle(.secondary)
         HStack {
-            Text("ABOUT-YOU.MD").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            Text("IN YOUR WORDS").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                .help("memory/about-you.md in your Broski folder: yours to edit")
             Spacer()
             Button(model.aboutFile.isEmpty ? "Write it" : "Edit") { model.editAboutYou() }.controlSize(.small)
         }

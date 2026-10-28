@@ -9,7 +9,8 @@ source scripts/agent/lib.sh
 use_xcode
 step() { printf '\n== %s\n' "$1"; }
 
-if builds="$(running_builds)"; then
+# One build at a time is for the 8 GB Mac; a CI runner may have Xcode's own background work going, and is ours alone.
+if [[ -z "${GITHUB_ACTIONS:-}" ]] && builds="$(running_builds)"; then
   echo "Another build is running ($builds). One at a time on this Mac: wait for it, then run this again." >&2
   exit 1
 fi

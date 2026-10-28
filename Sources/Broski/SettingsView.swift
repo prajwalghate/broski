@@ -858,7 +858,6 @@ private struct CompanionSettings: View {
             Section("Shortcuts") {
                 LabeledContent("Ask Broski") { ShortcutRecorder(app: app, keyPath: \.askHotkey) }
                 LabeledContent("Help with this") { ShortcutRecorder(app: app, keyPath: \.helpHotkey) }
-                Toggle("Read replies aloud", isOn: app.binding(\.speakReplies))
             }
 
             Section {

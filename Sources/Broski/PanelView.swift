@@ -28,6 +28,8 @@ final class PanelModel: ObservableObject {
     @Published var proposal: Interpretation?
     @Published var thinkingProposal = false
     @Published var aiEnabled = false
+    /// The provider that files notes, named in the panel.
+    @Published var aiName: String?
     @Published var whisperState: Transcription.State = .missing
     /// Which local engine writes the text ("Bark" or "Whisper").
     @Published var voiceEngine = "Whisper"
@@ -500,7 +502,7 @@ struct PanelView: View {
             Text("Preparing the voice model…").font(.system(size: 11)).foregroundStyle(.secondary)
                 .help("Compiling it for this Mac, once. Apple's dictation writes the text meanwhile.")
         case .ready:
-            Label(model.aiEnabled ? "\(model.voiceEngine) + Claude" : model.voiceEngine, systemImage: model.aiEnabled ? "sparkles" : "waveform")
+            Label(model.aiEnabled ? "\(model.voiceEngine) + \(model.aiName ?? "your model")" : model.voiceEngine, systemImage: model.aiEnabled ? "sparkles" : "waveform")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
                 .help(model.aiEnabled ? "Local \(model.voiceEngine) writes the text; your model files it" : "Choose a model in Settings › Models to tidy and file notes automatically")

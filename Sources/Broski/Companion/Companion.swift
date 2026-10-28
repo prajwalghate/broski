@@ -513,7 +513,7 @@ struct HelpCard: View {
                     if let saved = help.saved { Text(saved).foregroundStyle(.green) }
                     Spacer()
                     Button("Copy") { Exporter.copy(text) }
-                    Button("Ask a follow-up") {
+                    Button("Riff on this") {
                         companion.onRiff(help.project, "I asked for help with what's on my screen (\(help.context.summary)). You said:\n\n\(text)")
                         companion.close()
                     }

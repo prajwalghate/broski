@@ -55,10 +55,8 @@ struct OnboardingView: View {
                 if step > 0 && step < lastStep {
                     Button("Back") { step -= 1 }
                 }
-                if step == 2 && !Permissions.voiceGranted {
-                    Button("Skip, I'll type") { next() }
-                }
-                Button(step == lastStep ? "Start using Broski" : "Continue", action: next)
+                Button(step == 2 && !Permissions.voiceGranted ? "Skip, I'll type" : step == lastStep ? "Start using Broski" : "Continue",
+                       action: next)
                     .keyboardShortcut(.defaultAction)
                     .controlSize(.large)
             }
@@ -88,18 +86,16 @@ struct OnboardingView: View {
             Image(nsImage: BroskiArt.avatar(diameter: 104, crowned: true))
             Text("Hey, I'm Broski.")
                 .font(.system(size: 32, weight: .bold))
-            Text("Ideas show up at random. Tell me the moment you have one, by voice or by typing, and I'll file it into the right project before it evaporates.")
+            Text("Talk to me about your projects, by voice or by typing. I remember what you've told me, think things through with you, and keep your decisions and todos when you say so.")
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 12) {
-                Feature(symbol: "keyboard", text: "Press \(app.shortcutLabel) anywhere, or click Broski in the menu bar")
-                Feature(symbol: "waveform", text: "Say “in the strado project, add a todo: …”, or just type it")
-                Feature(symbol: "camera.viewfinder", text: "Press \(app.screenshotLabel) to grab a screenshot and talk over it")
-                Feature(symbol: "record.circle", text: "“Start a QA session for strado”, test, then “wrap up” for a full report")
-                Feature(symbol: "text.quote", text: "Highlight text anywhere and press ⌥⇧C to clip it, with its source")
-                Feature(symbol: "square.stack", text: "See, tick off, and move every note in the dashboard")
-                Feature(symbol: "lock", text: "Notes are plain markdown on your Mac. Nothing is uploaded.")
+                Feature(symbol: "keyboard", text: "Press \(app.shortcutLabel) anywhere, or click Broski in the menu bar, and talk or type")
+                Feature(symbol: "checkmark.circle", text: "Decisions, todos and bugs are saved only when you tap Save")
+                Feature(symbol: "camera.viewfinder", text: "Press \(app.screenshotLabel) to grab a screenshot and talk over it; \(app.clipLabel) clips highlighted text")
+                Feature(symbol: "square.stack", text: "Every project, its notes and its living page in the dashboard")
+                Feature(symbol: "lock", text: "Your notes are plain files in your Broski folder. Replies come from the AI you choose.")
             }
             .padding(.top, 6)
         }

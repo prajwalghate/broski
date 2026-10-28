@@ -341,6 +341,7 @@ final class CaptureController: NSObject {
         model.context = context
         model.session = library.activeSession
         model.aiEnabled = brain.hasModel
+        model.aiName = brain.fastProviderName
         model.lastItem = canAddMore ? lastItem : nil
         model.appendTarget = target
         model.phase = .typing

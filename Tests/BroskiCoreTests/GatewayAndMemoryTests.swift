@@ -52,6 +52,20 @@ struct GatewayAndMemoryTests {
         #expect(fake.sent.isEmpty && UsageLog.entries(root: root).isEmpty)
     }
 
+    @Test("a fact already remembered is kept once, even when two devices remember it")
+    func rememberedOnce() throws {
+        let root = try scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Memory.remember("Prefers short answers", root: root, device: "mac")
+        try Memory.remember("prefers short answers ", root: root, device: "mac")
+        // Each device writes only its own file, so the iPhone can't see the Mac's copy before it writes.
+        try Memory.remember("Prefers short answers", root: root, device: "iphone")
+        try Memory.remember("Works late on Fridays", root: root, device: "iphone")
+        #expect(Memory.remembered(root: root) == ["Prefers short answers", "Works late on Fridays"])
+        #expect(try Memory.forget("short answers", root: root, device: "mac"))
+        #expect(Memory.remembered(root: root) == ["Works late on Fridays"])
+    }
+
     @Test("a PDF goes as text to a model that can't read PDFs")
     func pdfAsText() async throws {
         let root = try scratch()
