@@ -1,0 +1,30 @@
+name: An idea
+description: Something Broski should do, or do differently
+labels: [idea]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you're trying to do, the moment it comes up, and what gets in the way today. In your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What would help. A sketch or a rough flow is fine.
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Who it's for
+      description: Who runs into this, and how often. You, people with many projects, people who only use the iPhone, people with local models…
+    validations:
+      required: true
+  - type: textarea
+    id: never
+    attributes:
+      label: Anything it must never do
+      description: Privacy, saving without asking, interrupting, sending a local-only project to a cloud model.

@@ -1022,15 +1022,19 @@ struct HomeView: View {
         }
     }
 
-    /// No model yet: the three ways to get one.
+    /// No model yet: choose one (a cloud model with your key, or one on this Mac), or Apple's in one tap.
     private var modelSetup: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("PICK A MODEL TO TALK TO").font(.system(size: 10, weight: .semibold)).foregroundStyle(Brand.purple)
-            Text("Broski needs a model to reply. Claude is the best at this; a model on this Mac keeps everything here.")
+            Text("CHOOSE A MODEL TO TALK TO").font(.system(size: 10, weight: .semibold)).foregroundStyle(Brand.purple)
+            Text("Broski needs a model to reply: a cloud one with your own key (Claude, OpenAI, Gemini and others), or one that runs on this Mac and keeps everything here.")
                 .font(.system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button("Add a Claude key") { model.openSettings(.ai) }.buttonStyle(.borderedProminent).tint(Brand.purple)
-                Button("Use a model on this Mac") { model.openSettings(.models) }
+                Button("Choose a model…") {
+                    ModelsSettings.openChooserNext = true
+                    model.openSettings(.models)
+                }
+                .buttonStyle(.borderedProminent).tint(Brand.purple)
                 if ModelsSettings.appleAvailable {
                     Button("Use Apple's on-device model") { model.useAppleModel() }
                 }

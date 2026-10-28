@@ -12,11 +12,11 @@ Broski is a companion you talk to about your projects, on the Mac and the iPhone
 
    You only have to do this once.
 
-Broski needs macOS 13 or later.
+Broski needs macOS 14 Sonoma or later on a Mac with Apple silicon.
 
 ## First run
 
-Your first conversation opens with Broski asking what to call you, what you're working on and how you like answers; after your third answer it remembers what you said (you can see and undo it under **What Broski knows**). With no model yet, a card offers a Claude key, a model on your Mac (Ollama, LM Studio), or Apple's on-device model.
+Your first conversation opens with Broski asking what to call you, what you're working on and how you like answers; after your third answer it remembers what you said (you can see and undo it under **What Broski knows**). With no model yet, a card offers **Choose a model…**: a cloud model with your own key (Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek), a model on your Mac (Ollama, LM Studio), or Apple's on-device model.
 
 A short welcome also walks you through setup:
 
@@ -47,7 +47,7 @@ A short welcome also walks you through setup:
 - **Companion:** the pill at the top holds Ask, **Help with this** (**⌥⇧H**, which looks at your screen), **Riff**, **call notes** and the **check-in**. Nudges are off by default ("Quiet"); turn them up in Settings › Companion. The morning check-in is there too, off until you turn it on.
 - **Trackers:** each project's **Tracker** tab shows its own tracker (ship, launch, ops, decisions, threads, open items), read in place. Broski never writes to a project's tracker. Live state, like which launch steps are ready, comes from the tracker's own board, with the time it was read.
 - **Onboard a project:** Tracker › **Onboard** asks the project's Claude Code threads where everything lives. Every answer has to cite a real file, commit, record or transcript, and Broski checks each one. A project with no tracker gets one Broski keeps, with **New** and status buttons.
-- **Claude Code:** Settings › AI › **Connect**, then ask Claude Code "what's open in my Broski notes for this project?" or "what's waiting on me across my projects?"
+- **Claude Code:** Settings › Connections › **Connect**, then ask Claude Code "what's open in my Broski notes for this project?" or "what's waiting on me across my projects?"
 - **Add more:** after you save, **Add more** carries on the same note. It's also in the menu as **Add to last note**.
 - **Name the project in the sentence:**
   - "In the strado project, add a todo: rotate the API keys"

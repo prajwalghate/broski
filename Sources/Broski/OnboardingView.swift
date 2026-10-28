@@ -2,7 +2,7 @@ import AppKit
 import BroskiCore
 import SwiftUI
 
-/// First run: what Broski is, how to call it, voice access, and where projects live.
+/// First run: what Broski is, how to call it, voice access, which AI to use, and where projects live.
 struct OnboardingView: View {
     @ObservedObject var app: AppModel
     @StateObject private var check = VoiceCheck()
@@ -10,6 +10,7 @@ struct OnboardingView: View {
     @State private var roots: [RootChoice] = []
     @State private var projectNames: [String]?
     @State private var refresh = 0
+    @StateObject private var providers: ProviderSetup
 
     struct RootChoice: Identifiable {
         var id: String { path }
@@ -22,6 +23,7 @@ struct OnboardingView: View {
     init(app: AppModel, step: Int = 0) {
         self.app = app
         _step = State(initialValue: step)
+        _providers = StateObject(wrappedValue: ProviderSetup(app: app))
     }
 
     var body: some View {
@@ -68,8 +70,8 @@ struct OnboardingView: View {
     }
 
     private func next() {
-        // A key pasted but not saved (Return goes to Continue) is saved, not lost.
-        if !key.trimmingCharacters(in: .whitespaces).isEmpty { saveKey() }
+        // A key pasted but not connected (Return goes to Continue) is tried, not lost.
+        if step == 3, !providers.key.trimmed.isEmpty, providers.phase == .idle { providers.connect() }
         if step == 3 { loadRoots() }
         if step == 4 { saveRoots() }
         if step == lastStep {
@@ -151,38 +153,12 @@ struct OnboardingView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh += 1 }
     }
 
-    @State private var key = ""
-    @State private var keyStatus: String?
-
-    private func saveKey() {
-        guard !key.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        app.brain.setKey(key, for: "claude")
-        key = ""
-        keyStatus = "Checking…"
-        Task { keyStatus = await app.brain.check("claude") ?? "Working" }
-    }
-
     private var ai: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            StepTitle(title: "Give me a brain (optional)",
-                      subtitle: "With a Claude API key I tidy up rambles, file notes into the right project, follow commands like “start a QA session”, and write reports from your screenshots. Only text and session screenshots go to Anthropic, never audio.")
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    SecureField(app.brain.hasModel ? "Key saved on this Mac" : "Paste your key: sk-ant-…", text: $key)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(saveKey)
-                    Button("Save", action: saveKey)
-                    .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                if let keyStatus {
-                    Text(keyStatus).font(.system(size: 12)).foregroundStyle(keyStatus == "Working" ? Color.green : keyStatus == "Checking…" ? Color.secondary : Color.red)
-                }
-                Link("Get a key at console.anthropic.com", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
-                    .font(.system(size: 12))
-            }
-            .padding(16)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
-            Text("Skip this and Broski still works, using its built-in phrase rules. You can add a key later in Settings › AI.")
+        VStack(alignment: .leading, spacing: 12) {
+            StepTitle(title: "Choose your AI",
+                      subtitle: "Broski works with the model you like: a cloud one with your own key, or one that runs on this Mac and keeps everything here. Only text, and screenshots you share, go to a cloud model; audio never does.")
+            ProviderChooser(setup: providers, compact: true)
+            Text("Skip this and Broski still files quick notes with its built-in rules. You can choose later in Settings › Models.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }

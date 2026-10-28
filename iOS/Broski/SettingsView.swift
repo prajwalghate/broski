@@ -6,9 +6,6 @@ import UIKit
 struct SettingsView: View {
     @ObservedObject var store: PhoneStore
     @State private var picking = false
-    @State private var key = ""
-    @State private var hasKey = Keychain.claudeKey != nil
-    @State private var keyStatus: String?
     @State private var checkIn = CheckInSchedule.enabled
     @State private var checkInTime = Calendar.current.date(from: CheckInSchedule.time) ?? Date()
     @State private var notificationsOff = false
@@ -38,33 +35,7 @@ struct SettingsView: View {
 
                 BarkSection()
 
-                Section {
-                    if hasKey {
-                        LabeledContent("Claude", value: "Key saved")
-                        Button("Remove key", role: .destructive) {
-                            Keychain.setClaudeKey(nil)
-                            hasKey = false
-                        }
-                    } else {
-                        SecureField("sk-ant-…", text: $key)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        Button("Save key") {
-                            Keychain.setClaudeKey(key)
-                            key = ""
-                            hasKey = Keychain.claudeKey != nil
-                        }
-                        .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    if hasKey {
-                        Button("Test the key") { Task { await test() } }
-                        if let keyStatus { Text(keyStatus).font(.footnote).foregroundStyle(.secondary) }
-                    }
-                } header: {
-                    Text("Claude")
-                } footer: {
-                    Text("Use the same key as on your Mac. With it, Broski talks with you in Talk, riffs, reads links you share, and tidies notes. Keys never sync: it stays in this iPhone's Keychain.")
-                }
+                ProviderKeysSection(store: store)
 
                 Section {
                     Toggle("Morning check-in", isOn: Binding(get: { checkIn }, set: { on in
@@ -111,15 +82,77 @@ struct SettingsView: View {
             }
         }
     }
+}
 
-    private func test() async {
-        guard let key = Keychain.claudeKey else { return }
-        keyStatus = "Checking…"
-        do {
-            try await ClaudeClient(apiKey: key).verify()
-            keyStatus = "Works."
-        } catch {
-            keyStatus = "Didn't work: \(error.localizedDescription)"
+/// Keys on this iPhone for the providers your Mac chose (its Settings › Models syncs in config.json). Keys never sync.
+private struct ProviderKeysSection: View {
+    @ObservedObject var store: PhoneStore
+    @State private var drafts: [String: String] = [:]
+    @State private var status: [String: String] = [:]
+    @State private var changed = 0
+
+    /// The providers some role uses.
+    private var providers: [ModelProvider] {
+        let settings = store.models ?? .defaults
+        let used = Set((Array(settings.roles.values) + Array(settings.localRoles.values)).map(\.provider))
+        return settings.providers.filter { used.contains($0.id) }
+    }
+
+    var body: some View {
+        Section {
+            ForEach(providers) { provider in row(provider) }
+        } header: {
+            Text("Models")
+        } footer: {
+            Text("Your Mac's Settings › Models chooses which model does what, and that syncs here. Keys never sync: paste each one here, and it stays in this iPhone's Keychain. A model running on your Mac can't be reached from the iPhone.")
+        }
+        .id(changed)
+    }
+
+    @ViewBuilder private func row(_ provider: ModelProvider) -> some View {
+        if provider.kind == .appleOnDevice {
+            LabeledContent(provider.displayName, value: PhoneHome.appleAvailable ? "On this iPhone" : "Not on this iPhone")
+        } else if !provider.needsKey {
+            LabeledContent(provider.displayName, value: provider.isLocal ? "On your Mac only" : "No key needed")
+        } else if Keychain.key(forProvider: provider.id) != nil && drafts[provider.id] == nil {
+            LabeledContent(provider.displayName, value: "Key saved")
+            HStack {
+                Button("Test") { test(provider) }
+                Spacer()
+                Button("Change") { drafts[provider.id] = "" }
+                Button("Remove", role: .destructive) {
+                    Keychain.setKey(nil, forProvider: provider.id)
+                    status[provider.id] = nil
+                    changed += 1
+                }
+            }
+            .buttonStyle(.borderless)
+            if let line = status[provider.id] { Text(line).font(.footnote).foregroundStyle(.secondary) }
+        } else {
+            SecureField("\(provider.displayName) key", text: Binding(get: { drafts[provider.id] ?? "" }, set: { drafts[provider.id] = $0 }))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Save \(provider.displayName) key") {
+                Keychain.setKey(drafts[provider.id], forProvider: provider.id)
+                drafts[provider.id] = nil
+                test(provider)
+            }
+            .disabled((drafts[provider.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty)
+            if let link = ProviderPreset.of(provider)?.keyURL.flatMap(URL.init(string:)) {
+                Link("Get your \(provider.displayName) key", destination: link).font(.footnote)
+            }
+        }
+    }
+
+    private func test(_ provider: ModelProvider) {
+        status[provider.id] = "Checking…"
+        Task {
+            do {
+                let result = try await ProviderCheck.run(provider, key: Keychain.key(forProvider: provider.id))
+                status[provider.id] = "Works (\(result.tested))."
+            } catch {
+                status[provider.id] = error.localizedDescription
+            }
         }
     }
 }

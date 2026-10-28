@@ -139,6 +139,19 @@ check block "$(stop)" "stop: a new file after the green run"
 git -C "$tmp" reset -q && git -C "$tmp" add README.md
 check allow "$(commit_check)" "commit: docs only, with untested code left unstaged"
 
+# Code the iPhone app builds (its own, and the shared core) needs a green run that built it too.
+mkdir -p "$tmp/iOS" "$tmp/Sources/BroskiCore"
+echo 'let phone = 1' > "$tmp/iOS/p.swift"
+git -C "$tmp" reset -q && git -C "$tmp" add iOS/p.swift
+green
+check refuse "$(commit_check)" "commit: iPhone code after a Mac-only green run"
+(cd "$tmp" && source scripts/agent/lib.sh && record_green "$(code_hash)" "scripts/ci.sh --ios")
+check allow "$(commit_check)" "commit: iPhone code after a green run with --ios"
+echo 'let core = 1' > "$tmp/Sources/BroskiCore/c.swift"
+git -C "$tmp" reset -q && git -C "$tmp" add Sources/BroskiCore/c.swift
+green
+check refuse "$(commit_check)" "commit: shared core code after a Mac-only green run"
+
 if [[ $failed -eq 0 ]]; then
   echo "Guardrails: all $count checks passed."
 else

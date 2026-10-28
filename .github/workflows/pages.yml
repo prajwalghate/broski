@@ -1,0 +1,61 @@
+name: Pages
+
+# Publishes site/ to GitHub Pages. The site's source never names the repository: links are written as
+# __REPO__ and __SITE__, filled in here, so a fork's site points at the fork.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; one already running is allowed to finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v6
+
+      - name: Fill in the repository and site links
+        env:
+          REPO_URL: https://github.com/${{ github.repository }}
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          rm -rf _site
+          cp -R site _site
+          find _site -name '*.html' -exec sed -i -e "s#__REPO__#${REPO_URL}#g" -e "s#__SITE__#${SITE_URL%/}#g" {} +
+          if grep -rl --include='*.html' -e '__REPO__' -e '__SITE__' _site; then
+            echo "Placeholders are left in the files above." >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -54,7 +54,8 @@ running_builds() {
     return 1
   fi
   local found
-  found="$(pgrep -fl 'swift-build|swift-test|swift-run|xcodebuild' 2>/dev/null | grep -v -e pgrep -e 'scripts/agent' | head -3 | cut -c1-80)"
+  # By process name, not command line: a shell that only mentions "swift build" isn't a build.
+  found="$(pgrep -lx 'swift-build|swift-test|swift-run|swift-package|xcodebuild' 2>/dev/null | head -3 | cut -c1-80)"
   [[ -n "$found" ]] && { echo "$found" | tr '\n' ';' | sed 's/;$//'; return 0; }
   return 1
 }

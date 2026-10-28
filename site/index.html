@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Nothing on this page comes from another site: no fonts, scripts, trackers or embeds. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Broski: a companion you talk to about your projects</title>
+  <meta name="description" content="A companion you talk to about your projects. It remembers, thinks with you, and saves only when you tap Save. Free and open source, for Mac and iPhone.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#FFFDF8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141417" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="__SITE__/">
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/icon-64.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Broski">
+  <meta property="og:title" content="Broski: a companion you talk to about your projects">
+  <meta property="og:description" content="It remembers what you've told it, thinks with you, and saves only when you tap Save, as plain files you own. Free and open source, for Mac and iPhone.">
+  <meta property="og:url" content="__SITE__/">
+  <meta property="og:image" content="__SITE__/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The Broski app icon next to the words: Broski, a companion you talk to about your projects.">
+  <meta name="twitter:card" content="summary_large_image">
+  <script src="main.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <!-- Brand marks, from the art Broski draws in code (Sources/Broski/BroskiArt.swift). -->
+  <symbol id="spark" viewBox="0 0 24 24"><path d="M12 1C13.76 10.24 13.76 10.24 23 12 13.76 13.76 13.76 13.76 12 23 10.24 13.76 10.24 13.76 1 12 10.24 10.24 10.24 10.24 12 1Z"/></symbol>
+  <symbol id="zig" viewBox="0 0 15 12"><path d="M1 11 5 2l3 8 3-9 3 8"/></symbol>
+  <symbol id="dashes" viewBox="0 0 9 11"><path d="M1 1.5 8 4.5M2 9l6 1"/></symbol>
+  <!-- Icons: 24 x 24, stroked with currentColor. -->
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></symbol>
+  <symbol id="i-memory" viewBox="0 0 24 24"><path d="M3.6 12a8.4 8.4 0 1 0 2.5-6M3.6 4.4v4h4"/><path d="M12 7.8v4.4l2.9 1.8"/></symbol>
+  <symbol id="i-riff" viewBox="0 0 24 24"><path d="M9.2 17.5h5.6M10.2 21h3.6"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.5.4.8 1 .8 1.6v.6h5.4v-.6c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3Z"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="m8.5 12.3 2.4 2.4 4.8-5"/></symbol>
+  <symbol id="i-projects" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="m7.5 9.8 2.6 2.3-2.6 2.3M12.6 15h4"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.8"/><path d="M10.5 18.5h3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3M12 14.3v2.4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="m3.5 3.5 17 17"/><path d="M10.4 5.6a9 9 0 0 1 1.6-.1c5 0 8.5 4.6 9.3 6.5-.4.9-1.3 2.4-2.7 3.7M6.6 6.9C4.6 8.2 3.3 10.2 2.7 12c.8 1.9 4.3 6.5 9.3 6.5 1.5 0 2.9-.4 4.1-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+  <symbol id="i-mask" viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="19" height="11" rx="3"/><path d="M7 10v4M5.3 11l3.4 2M5.3 13l3.4-2M12 10v4M10.3 11l3.4 2M10.3 13l3.4-2M15.7 14.4h2.8"/></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4.5" y="5" width="15" height="10.5" rx="1.8"/><path d="M2.5 19h19"/></symbol>
+  <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="m3.5 3.5 17 17"/><path d="M15 10.3V6a3 3 0 0 0-5.8-1.1M9 9v2a3 3 0 0 0 4.5 2.6"/><path d="M18.5 11a6.5 6.5 0 0 1-1 3.5M5.5 11a6.5 6.5 0 0 0 9.8 5.6M12 17.5V21M8.5 21h7"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="5.8" r="2.3"/><circle cx="7" cy="18.2" r="2.3"/><circle cx="17" cy="8" r="2.3"/><path d="M7 8.1v7.8M17 10.3c0 4-4.2 3.6-8.6 6.3"/></symbol>
+  <symbol id="i-test" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.4 4.6-4.8"/></symbol>
+  <symbol id="i-ci" viewBox="0 0 24 24"><path d="M19.6 12a7.6 7.6 0 0 1-13.1 5.3M4.4 12a7.6 7.6 0 0 1 13.1-5.3"/><path d="M17.8 3.3v3.4h-3.4M6.2 20.7v-3.4h3.4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.3 5 6v5.6c0 4.2 2.9 7.5 7 9.1 4.1-1.6 7-4.9 7-9.1V6Z"/><path d="m9.2 12.1 2 2 3.8-3.9"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+</svg>
+
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="#top">
+      <img src="assets/icon-64.png" width="32" height="32" alt="">
+      <span>Broski</span>
+    </a>
+    <nav class="nav-main" aria-label="Main">
+      <ul>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#models">Models</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+        <li><a href="#developers">Developers</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+    </nav>
+    <div class="nav-cta">
+      <a class="nav-link" href="__REPO__">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="__REPO__/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- 1 and 2: hero and the main screenshot -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <div class="app-badge">
+          <img src="assets/icon-128.png" width="56" height="56" alt="">
+          <p><strong>Broski</strong> <span>for Mac and iPhone</span></p>
+        </div>
+        <h1 id="hero-title">Talk about your projects. <span class="hl">Broski remembers.</span></h1>
+        <p class="lead">Press <kbd><span aria-hidden="true">⌥⇧B</span><span class="sr-only">Option Shift B</span></kbd> or hold <kbd>fn</kbd>, then talk or type: Broski remembers what you've told it and thinks with you. Decisions and todos are saved only when you tap Save, as plain files you own.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="__REPO__/releases/latest">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>
+            Download for Mac
+          </a>
+          <a class="btn btn-secondary" href="__REPO__">View on GitHub</a>
+        </div>
+        <p class="meta"><span>Free and open source</span> <span aria-hidden="true">·</span> <span>macOS 14 or later on Apple silicon</span> <span aria-hidden="true">·</span> <span>iPhone app included</span></p>
+      </div>
+
+      <div class="hero-shot">
+        <div class="stage stage-hero">
+          <svg class="deco deco-spark deco-a" aria-hidden="true" focusable="false"><use href="#spark"/></svg>
+          <svg class="deco deco-spark deco-b" aria-hidden="true" focusable="false"><use href="#spark"/></svg>
+          <svg class="deco deco-zig deco-c" aria-hidden="true" focusable="false"><use href="#zig"/></svg>
+          <svg class="deco deco-dashes deco-d" aria-hidden="true" focusable="false"><use href="#dashes"/></svg>
+          <!-- Placeholder until the real screenshot lands: assets/screens/{light,dark}/home.png, 1120 x 1400. -->
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/screens/dark/home.png">
+            <img class="shot" src="assets/screens/light/home.png" width="560" height="700" fetchpriority="high"
+                 alt="The Broski conversation on a Mac: you talk or type, and Broski answers with what it remembers about your project.">
+          </picture>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3: features -->
+  <section id="features" class="section" aria-labelledby="features-title">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <p class="kicker">What it does</p>
+        <h2 id="features-title">One conversation for all your projects</h2>
+        <p class="sub">Broski keeps the thread across days and devices, recalls what you decided, and turns what matters into notes, but only when you say so.</p>
+      </div>
+
+      <ul class="features" role="list">
+        <li class="card" data-reveal>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"/></svg></span>
+          <h3>Talk or type</h3>
+          <p>Press <kbd><span aria-hidden="true">⌥⇧B</span><span class="sr-only">Option Shift B</span></kbd>, or hold <kbd>fn</kbd> in any app and speak. Bark and Whisper turn speech into text on your Mac, and pausing to think is fine.</p>
+        </li>
+        <li class="card" data-reveal>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-memory"/></svg></span>
+          <h3>It remembers you</h3>
+          <p>It recalls your notes, past conversations and each project's decisions, and says where it got them. Read what it knows about you, and undo any change.</p>
+        </li>
+        <li class="card" data-reveal>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-riff"/></svg></span>
+          <h3>Riff mode</h3>
+          <p>Think out loud. Broski builds on the idea, pushes back and asks one question at a time. Wrap up turns the riff into one note.</p>
+        </li>
+        <li class="card" data-reveal>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-save"/></svg></span>
+          <h3>Saves only when you tap</h3>
+          <p>When you decide something or name a task, Broski offers a card. Nothing is saved until you tap Save.</p>
+        </li>
+        <li class="card" data-reveal>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-projects"/></svg></span>
+          <h3>Every project in one place</h3>
+          <p>A dashboard of every project, a living page for each, and its tracker read where it lives. Broski never writes to a project's tracker.</p>
+        </li>
+        <li class="card" data-reveal>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-terminal"/></svg></span>
+          <h3>Your notes in Claude Code</h3>
+          <p>Broski's MCP server lets Claude Code and other MCP clients search your notes, project pages and trackers. It never edits a note.</p>
+        </li>
+        <li class="card" data-reveal>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-phone"/></svg></span>
+          <h3>On your iPhone too</h3>
+          <p>The Talk tab carries the same conversation, synced through iCloud Drive. Bark transcribes on the phone as well.</p>
+        </li>
+        <li class="card" data-reveal>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>
+          <h3>A private vault</h3>
+          <p>Notes encrypted on your device with AES-256-GCM, opened only by your passphrase or recovery key. No model ever reads them.</p>
+        </li>
+      </ul>
+
+      <!-- Riff, up close -->
+      <div class="spotlight flip">
+        <div class="spot-copy" data-reveal>
+          <p class="kicker">Riff mode</p>
+          <h3 class="spot-title">Think out loud, then keep one note</h3>
+          <p>Say “let's riff about…” and Broski brainstorms with you on your deep model. It builds on the idea first, brings real facts and says how sure it is, and pushes back when something won't hold.</p>
+          <ul class="checks" role="list">
+            <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>Thinking moves when you want them: first principles, pre-mortem, invert, steelman, the 10x version.</span></li>
+            <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>Your rules stick. Say “rule: no code talk” and every riff keeps it.</span></li>
+            <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>Wrap up gives you one card: the summary, ideas, decisions, todos and open questions.</span></li>
+          </ul>
+        </div>
+        <div class="spot-shot" data-reveal>
+          <div class="stage">
+            <!-- Placeholder: assets/screens/{light,dark}/home-riff.png, 1120 x 1400. -->
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/screens/dark/home-riff.png">
+              <img class="shot" src="assets/screens/light/home-riff.png" width="560" height="700" loading="lazy" decoding="async"
+                   alt="A riff in Broski: an idea built up over several turns, ready to wrap up into one note.">
+            </picture>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dashboard, up close -->
+      <div class="spotlight wide">
+        <div class="spot-copy wide-copy" data-reveal>
+          <div>
+            <p class="kicker">Dashboard</p>
+            <h3 class="spot-title">Every project, one dashboard</h3>
+          </div>
+          <div>
+            <p>Each project gets a living page: where it stands, open bugs, todos, ideas, decisions and open questions, with every line linked to the note it came from.</p>
+            <ul class="checks" role="list">
+              <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>Trackers are read in place, never copied and never written to.</span></li>
+              <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>Ask Broski (<kbd><span aria-hidden="true">⌥⇧A</span><span class="sr-only">Option Shift A</span></kbd>) answers “what's waiting on me?” across projects, with sources.</span></li>
+              <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>A board and a list for each project, with search and filters across everything.</span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="spot-shot" data-reveal>
+          <div class="stage stage-wide">
+            <!-- Placeholder: assets/screens/{light,dark}/dashboard-overview.png, 2360 x 1480. -->
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/screens/dark/dashboard-overview.png">
+              <img class="shot" src="assets/screens/light/dashboard-overview.png" width="940" height="740" loading="lazy" decoding="async"
+                   alt="A project's living page in the Broski dashboard: where it stands, suggested next steps, open bugs, todos and ideas, each linked to the notes it came from.">
+            </picture>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4: any model -->
+  <section id="models" class="section section-alt" aria-labelledby="models-title">
+    <div class="wrap split">
+      <div class="split-copy" data-reveal>
+        <p class="kicker">Any model</p>
+        <h2 id="models-title">Pick the model for each job</h2>
+        <p class="sub">Broski isn't tied to one AI company. Each job has a role, and you choose the model for each one.</p>
+
+        <dl class="roles">
+          <div><dt>Fast</dt><dd>Titles, tags and save suggestions</dd></div>
+          <div><dt>Everyday</dt><dd>The conversation and Ask</dd></div>
+          <div><dt>Deep</dt><dd>Riffs, reflection and new projects</dd></div>
+        </dl>
+
+        <h3 class="chips-title">Works with</h3>
+        <ul class="chips" role="list">
+          <li>Claude</li>
+          <li>OpenAI</li>
+          <li>Google Gemini</li>
+          <li>OpenRouter</li>
+          <li>Groq</li>
+          <li>Mistral</li>
+          <li>DeepSeek</li>
+          <li class="local">Ollama<span class="sr-only">, on your Mac</span></li>
+          <li class="local">LM Studio<span class="sr-only">, on your Mac</span></li>
+          <li class="local">Apple's on-device model<span class="sr-only">, on your Mac</span></li>
+          <li class="any">Any OpenAI-compatible server</li>
+        </ul>
+        <p class="legend" aria-hidden="true"><span class="legend-dot"></span>Runs on your Mac</p>
+
+        <ul class="checks" role="list">
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>Keys stay on your device.</span></li>
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>Projects marked local only use only models on your device.</span></li>
+          <li><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg><span>See this month's spend by model, and set a daily limit.</span></li>
+        </ul>
+        <a class="more" href="__REPO__/blob/main/docs/models.md">How to set up a model<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+      </div>
+      <div class="split-shot" data-reveal>
+        <div class="stage">
+          <!-- Placeholder: assets/screens/{light,dark}/settings-models.png, 1280 x 1400. -->
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/screens/dark/settings-models.png">
+            <img class="shot" src="assets/screens/light/settings-models.png" width="640" height="700" loading="lazy" decoding="async"
+                 alt="Settings, Models: the providers you've connected, and the model chosen for the fast, everyday and deep roles.">
+          </picture>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5: privacy -->
+  <section id="privacy" class="section band" aria-labelledby="privacy-title">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <p class="kicker">Privacy</p>
+        <h2 id="privacy-title">Your notes stay yours</h2>
+        <p class="sub">Broski is an app on your devices and a folder of plain files. There's no account, no telemetry and no Broski server.</p>
+      </div>
+      <ul class="privacy-grid" role="list" data-reveal>
+        <li>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-folder"/></svg></span>
+          <h3>Files you own</h3>
+          <p>Markdown and JSON in a folder you pick: iCloud Drive to sync with your iPhone, Dropbox, a Git repo, or ~/Broski.</p>
+        </li>
+        <li>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-eye-off"/></svg></span>
+          <h3>Nothing to sign up for</h3>
+          <p>No account, no analytics, and no Broski server to send anything to. Broski runs on your Mac and iPhone, and nowhere else.</p>
+        </li>
+        <li>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mask"/></svg></span>
+          <h3>Secrets masked</h3>
+          <p>Every request goes through one gateway, which masks keys and tokens before anything reaches a model.</p>
+        </li>
+        <li>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-laptop"/></svg></span>
+          <h3>Local-only projects</h3>
+          <p>Mark a project local only and its notes go only to models on your device. If none is set up, Broski says so instead.</p>
+        </li>
+        <li>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>
+          <h3>A private vault</h3>
+          <p>AES-256-GCM on your device, with a passphrase and a one-time recovery key. No model, search or memory reads it.</p>
+        </li>
+        <li>
+          <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic-off"/></svg></span>
+          <h3>Mic off until you ask</h3>
+          <p>Hold to talk and let go when you're done. The optional wake word runs only with on-device recognition.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 6: how to start -->
+  <section id="start" class="section" aria-labelledby="start-title">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <p class="kicker">Get started</p>
+        <h2 id="start-title">Three steps to your first conversation</h2>
+      </div>
+      <ol class="steps" role="list">
+        <li data-reveal>
+          <h3>Download and open</h3>
+          <p>Drag Broski into Applications and open it. The first time, macOS asks you to confirm it; the <a href="#faq-warning">FAQ</a> shows how.</p>
+        </li>
+        <li data-reveal>
+          <h3>Choose your AI</h3>
+          <p>Paste a key for Claude or another provider, or pick a model on your Mac: Ollama, LM Studio or Apple's on-device model.</p>
+        </li>
+        <li data-reveal>
+          <h3>Press <kbd><span aria-hidden="true">⌥⇧B</span><span class="sr-only">Option Shift B</span></kbd> and talk</h3>
+          <p>Broski starts by getting to know you: what to call you, what you're working on, and how you like answers.</p>
+        </li>
+      </ol>
+      <div class="actions" data-reveal>
+        <a class="btn btn-primary" href="__REPO__/releases/latest">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>
+          Download for Mac
+        </a>
+        <a class="more" href="__REPO__/blob/main/BETA.md">Read the install notes<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7: built carefully -->
+  <section id="developers" class="section section-alt" aria-labelledby="developers-title">
+    <div class="wrap split split-dev">
+      <div class="split-copy" data-reveal>
+        <p class="kicker">For developers</p>
+        <h2 id="developers-title">Built carefully, in the open</h2>
+        <p class="sub">Broski holds people's thinking, so every change has to earn its place.</p>
+        <ul class="dev-list" role="list">
+          <li>
+            <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-branch"/></svg></span>
+            <div><h3>Open source</h3><p>Apache 2.0. Native Swift on the Mac and iPhone, with one shared core you can read end to end.</p></div>
+          </li>
+          <li>
+            <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-test"/></svg></span>
+            <div><h3>Written test-first</h3><p>Every change starts with a failing test, and every bug fix with a test that reproduces the bug.</p></div>
+          </li>
+          <li>
+            <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-ci"/></svg></span>
+            <div><h3>Checked on every push</h3><p>CI runs the full test suite, a secret scan and an off-screen check of the real chat views.</p></div>
+          </li>
+          <li>
+            <span class="icon-tile"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-shield"/></svg></span>
+            <div><h3>Guardrails for AI agents</h3><p>AGENTS.md and the repo's hooks stop coding agents from skipping tests, force-pushing, or touching your real notes without asking.</p></div>
+          </li>
+        </ul>
+        <p class="link-row">
+          <a class="more" href="__REPO__/blob/main/CONTRIBUTING.md">CONTRIBUTING.md<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+          <a class="more" href="__REPO__/blob/main/AGENTS.md">AGENTS.md<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+        </p>
+      </div>
+      <figure class="terminal" data-reveal>
+        <div class="term-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+        <pre><code><span class="t-prompt">$</span> scripts/ci.sh --ios
+<span class="t-step">==</span> Secret scan
+<span class="t-step">==</span> Guardrails (agent and git hooks)
+<span class="t-step">==</span> Build
+<span class="t-step">==</span> Unit tests
+<span class="t-step">==</span> Self-tests
+<span class="t-step">==</span> Chat check (the real message box and conversation, off screen)
+<span class="t-step">==</span> iPhone app (unsigned)
+<span class="t-ok">== All green</span></code></pre>
+        <figcaption>The steps CI runs on every push, from <code>scripts/ci.sh</code>.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 8: FAQ -->
+  <section id="faq" class="section" aria-labelledby="faq-title">
+    <div class="wrap narrow">
+      <div class="section-head" data-reveal>
+        <p class="kicker">FAQ</p>
+        <h2 id="faq-title">Questions</h2>
+      </div>
+      <div class="faq" data-reveal>
+        <details>
+          <summary>Is Broski free?</summary>
+          <div class="answer">
+            <p>Yes. Broski is free and open source under the Apache License 2.0. If you use a cloud model, you pay that provider directly for what you use; a model running on your Mac costs nothing. Settings › Models shows this month's spend and lets you set a daily limit.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Does it work offline?</summary>
+          <div class="answer">
+            <p>Yes, with a local model (Ollama, LM Studio or Apple's on-device model) and on-device voice (Bark or Whisper). Cloud models and reading links need a connection.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Where are my notes?</summary>
+          <div class="answer">
+            <p>In a folder you pick, as plain markdown and JSON files: <code>~/Broski</code>, or iCloud Drive to sync with your iPhone, Dropbox, or a Git repo. They open in any editor, Obsidian included. Uninstall Broski and they stay where they are.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Is there an iPhone app?</summary>
+          <div class="answer">
+            <p>Yes, with the same conversation, notes and riffs. For now you build it from source and install it with your own Apple ID. <a href="__REPO__/blob/main/docs/iphone.md">The iPhone guide</a> walks you through it.</p>
+          </div>
+        </details>
+        <details id="faq-warning">
+          <summary>Why does macOS warn me when I open it?</summary>
+          <div class="answer">
+            <p>Broski isn't notarized by Apple yet. Open it once, then go to System Settings › Privacy &amp; Security and click Open Anyway. On macOS 14, right-click Broski in Applications and choose Open instead. You only do this once.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Does it run on Windows or Linux?</summary>
+          <div class="answer">
+            <p>No. Broski is a native Mac and iPhone app, written in Swift.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <div class="wrap">
+      <div class="cta-card" data-reveal>
+        <svg class="deco deco-spark cta-spark-a" aria-hidden="true" focusable="false"><use href="#spark"/></svg>
+        <svg class="deco deco-spark cta-spark-b" aria-hidden="true" focusable="false"><use href="#spark"/></svg>
+        <svg class="deco deco-zig cta-zig" aria-hidden="true" focusable="false"><use href="#zig"/></svg>
+        <img src="assets/icon-256.png" width="112" height="112" alt="" loading="lazy" decoding="async">
+        <h2 id="cta-title">Press <kbd><span aria-hidden="true">⌥⇧B</span><span class="sr-only">Option Shift B</span></kbd> and say hello</h2>
+        <p>Free and open source, for Mac and iPhone.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="__REPO__/releases/latest">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>
+            Download for Mac
+          </a>
+          <a class="btn btn-secondary" href="__REPO__">View on GitHub</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 9: footer -->
+<footer class="site-footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href="#top">
+        <img src="assets/icon-64.png" width="28" height="28" alt="" loading="lazy" decoding="async">
+        <span>Broski</span>
+      </a>
+      <p>A companion you talk to about your projects.</p>
+    </div>
+    <nav class="footer-nav" aria-label="Footer">
+      <div>
+        <h2>Get Broski</h2>
+        <ul>
+          <li><a href="__REPO__/releases/latest">Download</a></li>
+          <li><a href="__REPO__/releases">Releases</a></li>
+          <li><a href="__REPO__/tree/main/docs">Docs</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Project</h2>
+        <ul>
+          <li><a href="__REPO__">GitHub</a></li>
+          <li><a href="__REPO__/blob/main/CONTRIBUTING.md">Contributing</a></li>
+          <li><a href="__REPO__/blob/main/AGENTS.md">AGENTS.md</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Policies</h2>
+        <ul>
+          <li><a href="__REPO__/blob/main/SECURITY.md">Security policy</a></li>
+          <li><a href="__REPO__/blob/main/CODE_OF_CONDUCT.md">Code of conduct</a></li>
+          <li><a href="__REPO__/blob/main/LICENSE">License (Apache 2.0)</a></li>
+        </ul>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap">
+    <div class="footer-base">
+      <p>Free and open source under the Apache License 2.0. This site sets no cookies and loads nothing from anyone else.</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
