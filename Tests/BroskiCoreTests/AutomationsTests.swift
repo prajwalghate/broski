@@ -50,9 +50,9 @@ struct AutomationsTests {
         try Automations.save([rule], root: root)
         #expect(Automations.load(root: root) == [rule])
 
-        try ChangeStream.append([event("strado", "decided", "Old", at: -60)], root: root, project: "strado")
+        try ChangeStream.append([event("strado", "decided", "Old", at: -60)], root: root, project: "strado", device: "mac")
         #expect(Automations.pending(root: root, now: now).isEmpty, "the first look sets the cursor and fires nothing")
-        try ChangeStream.append([event("strado", "decided", "New", at: 30)], root: root, project: "strado")
+        try ChangeStream.append([event("strado", "decided", "New", at: 30)], root: root, project: "strado", device: "mac")
         let pending = Automations.pending(root: root, now: now.addingTimeInterval(60))
         #expect(pending.map(\.title) == ["New"])
         #expect(Automations.pending(root: root, now: now.addingTimeInterval(120)).isEmpty, "each event fires once")

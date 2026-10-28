@@ -172,7 +172,7 @@ final class HomeModel: ObservableObject {
                     if let project {
                         try? ChangeStream.append([ChangeEvent(at: Date(), project: project, source: "broski", kind: "added",
                                                               id: "\(project):resource/\((path as NSString).lastPathComponent)",
-                                                              title: file.lastPathComponent)], root: root, project: project)
+                                                              title: file.lastPathComponent)], root: root, project: project, device: "mac")
                     }
                 } catch {
                     problem = "Couldn't keep \(file.lastPathComponent): \(error.localizedDescription)"
