@@ -21,6 +21,8 @@ enum Log {
                 _ = try? handle.seekToEnd()
                 try? handle.write(contentsOf: Data(line.utf8))
             } else {
+                // A folder Broski has just started fresh in has no .broski yet.
+                try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try? line.write(to: url, atomically: true, encoding: .utf8)
             }
         }

@@ -128,12 +128,22 @@ enum Screenshot {
 
     /// Quits and reopens Broski, which macOS needs before a new Screen Recording grant takes effect.
     static func relaunchBroski() {
+        Log.flush()
         let path = Bundle.main.bundleURL.path
+        let pid = ProcessInfo.processInfo.processIdentifier
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", path]
+        // Opens Broski again once this one has gone: `open` on a running app only brings it forward.
+        process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"", path, "\(pid)"]
         try? process.run()
         NSApp.terminate(nil)
+        // A quit can be swallowed (a sheet closing at that moment did it once). Broski mustn't keep running on a
+        // folder it no longer has open, so it leaves anyway, after the time keeping an open note takes.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+            Log.info("The quit to restart didn't happen; leaving now")
+            Log.flush()
+            exit(0)
+        }
     }
 
     static func openScreenRecordingSettings() {

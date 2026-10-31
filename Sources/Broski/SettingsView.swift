@@ -335,7 +335,9 @@ struct StartFreshSheet: View {
                 Button("Cancel") { shown = false }.keyboardShortcut(.cancelAction)
                 Button("Move it aside and restart") {
                     shown = false
-                    app.startCompletelyFresh(forgetKeys: forgetKeys)
+                    // After the sheet has gone, so closing it can't swallow the restart.
+                    let forget = forgetKeys
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { app.startCompletelyFresh(forgetKeys: forget) }
                 }
                 .buttonStyle(.borderedProminent).tint(Brand.purple)
             }
