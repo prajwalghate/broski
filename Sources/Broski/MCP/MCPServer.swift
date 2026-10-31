@@ -150,6 +150,8 @@ enum MCPServer {
         /// Each source's latest read, for its drift.
         private(set) var snapshots: [String: TrackerSnapshot] = [:]
         private(set) var localOnly: Set<String> = []
+        /// Memory paused in Settings: the memory tool doesn't share it either.
+        private(set) var memoryPaused = false
 
         init(store: ItemStore) { self.store = store }
 
@@ -175,7 +177,13 @@ enum MCPServer {
         private func readLocalOnly() {
             localOnly = BroskiConfig.localOnly(root: store.root) { store.projectNames() + registry.projects.map(\.notes) }
             if let data = try? Data(contentsOf: store.root.appendingPathComponent("config.json")),
-               let config = try? JSONDecoder().decode(BroskiConfig.self, from: data) { WaitingOn.ownerAliases = config.ownerAliases }
+               let config = try? JSONDecoder().decode(BroskiConfig.self, from: data) {
+                WaitingOn.ownerAliases = config.ownerAliases
+                memoryPaused = config.memoryPaused
+            } else {
+                // Like local-only: a config that can't be read can't say memory is on, so it counts as paused.
+                memoryPaused = true
+            }
         }
     }
     static var brain: Brain!
@@ -497,6 +505,7 @@ enum MCPServer {
         case "search_conversations":
             guard let query = args["query"] as? String, !query.isEmpty else { return ("Give a query.", true) }
             guard let where_ = scope(args["project"]) else { return unknown(args["project"]) }
+            if brain.memoryPaused { return ("Memory is paused in Broski's settings, so past conversations aren't searched.", false) }
             let limit = min(max(args["limit"] as? Int ?? 10, 1), 30)
             // Local-only projects never leave Broski, and neither does what was said about them.
             let turns = ConversationStore(root: store.root, device: "mac").recent(5000)
@@ -521,6 +530,7 @@ enum MCPServer {
             return (rows.isEmpty ? "No decisions saved yet." : rows.joined(separator: "\n"), false)
 
         case "memory":
+            if brain.memoryPaused { return ("Memory is paused in Broski's settings, so what it knows about the user isn't shared.", false) }
             return (Memory.aboutYou(root: store.root) ?? "Broski doesn't know anything about the user yet.", false)
 
         default:

@@ -4,6 +4,14 @@ import BroskiCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The card under the conversation when the project you're on has no brief (`stale` nil) or one that's fallen behind.
+struct BriefNudge: Equatable {
+    var project: String
+    var stale: String?
+    /// What closing it remembers.
+    var key: String
+}
+
 /// The home conversation: one ongoing conversation with Broski, kept as files in the Broski folder. Replies come
 /// through the model gateway; notes, todos and decisions are saved only from a card you tap, or a "note: …".
 @MainActor
@@ -13,7 +21,7 @@ final class HomeModel: ObservableObject {
     @Published var draft = "" {
         didSet { if !isPrivate { UserDefaults.standard.set(draft, forKey: Self.draftKey) } }
     }
-    private static let draftKey = "BroskiHomeDraft"
+    static let draftKey = "BroskiHomeDraft"
     @Published private(set) var thinking = false
     /// "Reading example.com…" while links you shared are being opened.
     @Published private(set) var reading: String?
@@ -29,7 +37,22 @@ final class HomeModel: ObservableObject {
         didSet { if oldValue && !showingPalette { composerFocus += 1 } }
     }
     @Published private(set) var composerFocus = 0
-    @Published var project: String?
+    @Published var project: String? {
+        didSet { if project != oldValue { refreshBriefs() } }
+    }
+    /// Setting up a project's brief: Broski asks six questions itself, and nothing goes to a model.
+    @Published private(set) var interview: BriefInterview?
+    /// A brief waiting for your tap: nothing is written until you tap Save.
+    @Published var briefOffer: BriefOffer?
+    /// Projects that have a brief, for ⌘K and the empty conversation.
+    @Published private(set) var briefs: Set<String> = []
+    /// The project you're on has no brief, or its brief has fallen behind: a card says what to do next.
+    @Published private(set) var briefNudge: BriefNudge?
+    /// You copied the prompt for this project's Claude Code thread: the card offers to paste its answer.
+    @Published private(set) var awaitingAnswer: String?
+    /// The brief cards you closed, so each asks once.
+    private var dismissedBriefCards = Set(UserDefaults.standard.stringArray(forKey: HomeModel.dismissedBriefKey) ?? [])
+    static let dismissedBriefKey = "BroskiBriefCardsClosed"
     /// What's being discussed now ("launch plan"), from the review after each reply; stored on each turn.
     @Published private(set) var topic: String?
     /// Showing one thread (a topic) instead of the whole conversation.
@@ -93,6 +116,7 @@ final class HomeModel: ObservableObject {
         }
         if project == nil { project = turns.last(where: { $0.project != nil })?.project }
         if topic == nil { topic = turns.last?.topic }
+        refreshBriefs()
     }
 
     /// The conversation's files changed on disk (your iPhone said something): show it, unless a reply is on its way.
@@ -166,6 +190,18 @@ final class HomeModel: ObservableObject {
         problem = nil
         canRetry = false
         voice.problem = nil
+        // Mid-interview, everything is an answer except the vault, private mode and a quick note, which work as always.
+        if interview != nil, !isPrivate, !text.isEmpty {
+            let command = ConversationCommand.parse(text, catalog: library.catalog, riffing: riffing)
+            guard let command, BriefInterview.passesThrough(command) else { return answerInterview(text) }
+            return run(command)
+        }
+        // Claude Code's answer, pasted back: a card to look over, and no reply.
+        if !isPrivate, files.isEmpty, let brief = ProjectBrief.pasted(text, projects: library.projectNames, current: project) {
+            add(Turn(device: "mac", speaker: .you, text: text, project: brief.project, topic: topic))
+            awaitingAnswer = nil
+            return offerBrief(brief, from: "That's a brief for \(brief.project).")
+        }
         if let command = ConversationCommand.parse(text, catalog: library.catalog, riffing: riffing) {
             guard case .startRiff(let about) = command else { return run(command) }
             startRiff(about: about)
@@ -299,7 +335,8 @@ final class HomeModel: ObservableObject {
 
     /// What ⌘K offers now.
     var paletteState: Palette.State {
-        Palette.State(projects: library.projectNames, current: project, isPrivate: isPrivate, riffing: riffing, deep: deep)
+        Palette.State(projects: library.projectNames, current: project, isPrivate: isPrivate, riffing: riffing, deep: deep,
+                      briefs: briefs)
     }
 
     /// Does what you picked in ⌘K. The dashboard and memory open from the view, which owns those windows.
@@ -315,6 +352,9 @@ final class HomeModel: ObservableObject {
         case .vault: openVault(nil)
         case .settings(let page): openSettings(page == "voice" ? .voice : page == "general" ? .general : .models)
         case .dashboard, .memory: break
+        case .setUpBrief(let name): startInterview(name)
+        case .askClaudeCode(let name): copyBriefPrompt(name)
+        case .howItWorks: add(Turn(device: "mac", speaker: .broski, text: HowTo.overview, project: project, topic: topic))
         }
     }
 
@@ -374,24 +414,27 @@ final class HomeModel: ObservableObject {
     }
 
     private func reply(attachments: [ModelPart] = []) {
-        let history = visibleTurns
+        // What was said about a local-only project stays out of a reply about anything else.
+        let history = isPrivate ? visibleTurns : LocalOnly.sendable(visibleTurns, project: project, localOnly: localOnlyProjects)
         let said = history.last(where: { $0.speaker == .you })?.text ?? ""
         let localOnly = touchesLocalOnly(history.suffix(12).map(\.text).joined(separator: "\n"))
         // Private starts blank; otherwise recall leaves out local-only projects unless this conversation stays local anyway.
+        // What the folder may give this reply, by your switches: nothing in private mode, no memory while it's paused.
+        let memory = ReplyMemory.gather(root: root, project: project, isPrivate: isPrivate, config: config())
         let recall = isPrivate ? [] : Recall.find(said, index: recallSearch(), excluding: Set(history.map { "turn:\($0.id)" }),
-                                                   hidden: localOnly ? [] : localOnlyProjects)
-        let decisions = isPrivate ? [] : project.map { DecisionLog.current(root: root, project: $0) } ?? []
-        let aboutYou = isPrivate ? nil : Memory.aboutYou(root: root)
+                                                   hidden: localOnly ? [] : localOnlyProjects).filter(memory.allows)
+        let decisions = memory.decisions
+        let aboutYou = memory.aboutYou
         let page = isPrivate ? nil : project.flatMap { library.pages[$0] }
         // What it was given, kept with the reply and shown folded under it.
         let used = ConversationContext.used(aboutYou: aboutYou, page: page, project: project, decisions: decisions,
-                                            recall: recall, isPrivate: isPrivate)
+                                            recall: recall, isPrivate: isPrivate, brief: memory.brief)
         let request = ConversationContext.build(aboutYou: aboutYou,
                                                 page: page,
                                                 project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
                                                 decisions: decisions, recall: recall, attachments: attachments,
                                                 firstRun: !isPrivate && FirstRun.active(turns: history),
-                                                riff: riffing ? riffRules : nil)
+                                                riff: riffing ? riffRules : nil, brief: memory.brief, guide: HowTo.wanted(said))
         // Riffs think on the deep model.
         let riff = riffing
         let role: ModelRole = deep || riff ? .deep : .everyday
@@ -468,6 +511,9 @@ final class HomeModel: ObservableObject {
             suggestSave(force: true)
         case .remember(let fact):
             guard !isPrivate else { return problem = "Private conversations keep nothing, so that isn't remembered." }
+            guard !config().memoryPaused else {
+                return problem = "Memory is paused, so that isn't remembered. Turn it back on in Settings › General › Start fresh."
+            }
             do {
                 try Memory.remember(fact, root: root, device: "mac")
                 add(Turn(device: "mac", speaker: .note, text: "Remembered: \(fact)", project: project))
@@ -490,6 +536,8 @@ final class HomeModel: ObservableObject {
             // Straight to the vault: never sent to a model, never kept in the conversation.
             openVault(secret)
             add(Turn(device: "mac", speaker: .note, text: "Sent to your private vault (not kept here)", project: project))
+        case .setUpBrief(let name):
+            startInterview(name)
         case .startRiff(let about):
             startRiff(about: about)
         case .endRiff:
@@ -612,6 +660,136 @@ final class HomeModel: ObservableObject {
         self.card = card.items.isEmpty ? nil : card
     }
 
+    // MARK: Briefs
+
+    /// Three things to try from the empty conversation.
+    var suggestions: [Suggestion] {
+        let hasBrief = project.map(briefs.contains) ?? false
+        // While the card below offers to set one up, the list doesn't offer it again.
+        let offered = briefNudge != nil && briefNudge?.stale == nil
+        return BroskiLines.tryThis(project: project, hasBrief: hasBrief || offered)
+    }
+
+    func `try`(_ suggestion: Suggestion) {
+        switch suggestion.action {
+        case .ask(let words): send(words)
+        case .start(let words): draft = words; composerFocus += 1
+        case .setUpBrief(let name): startInterview(name)
+        }
+    }
+
+    /// Which projects have a brief, and whether the one you're on needs a card: none yet, or fallen behind its tracker.
+    func refreshBriefs() {
+        let names = library.projectNames
+        briefs = Set(names.filter { FileManager.default.fileExists(atPath: ProjectBrief.file(root: root, project: $0).path) })
+        briefNudge = nil
+        guard let project, names.contains(project) else { return }
+        if let brief = ProjectBrief.load(root: root, project: project) {
+            let changes = ChangeStream.read(root: root, project: project, since: brief.updated ?? .distantPast)
+            guard let line = brief.staleness(changes: changes, now: now()) else { return }
+            let key = "stale:\(project):\(Int(brief.updated?.timeIntervalSince1970 ?? 0))"
+            if !dismissedBriefCards.contains(key) { briefNudge = BriefNudge(project: project, stale: line, key: key) }
+        } else if !dismissedBriefCards.contains("none:\(project)") {
+            briefNudge = BriefNudge(project: project, stale: nil, key: "none:\(project)")
+        }
+    }
+
+    func dismissBriefNudge() {
+        guard let briefNudge else { return }
+        dismissedBriefCards.insert(briefNudge.key)
+        UserDefaults.standard.set(Array(dismissedBriefCards).sorted(), forKey: Self.dismissedBriefKey)
+        self.briefNudge = nil
+    }
+
+    /// "Let's set up recipe-box": Broski asks six questions, one at a time, and offers the brief at the end.
+    func startInterview(_ name: String) {
+        guard !isPrivate else {
+            return problem = "Private conversations keep nothing, so a brief can't be set up here. Leave private mode first."
+        }
+        guard !thinking else { return }
+        if project != name {
+            project = name
+            add(Turn(device: "mac", speaker: .topic, text: name, project: name))
+        }
+        let started = BriefInterview(project: name, decisions: DecisionLog.current(root: root, project: name).map(\.text),
+                                     existing: ProjectBrief.load(root: root, project: name))
+        interview = started
+        briefOffer = nil
+        add(Turn(device: "mac", speaker: .broski, text: started.opening, project: name, topic: topic))
+    }
+
+    /// Stops setting up a brief. Nothing was saved.
+    func stopInterview() {
+        guard let interview else { return }
+        self.interview = nil
+        add(Turn(device: "mac", speaker: .note, text: "Stopped setting up the \(interview.project) brief. Nothing was saved.",
+                 project: interview.project))
+    }
+
+    private func answerInterview(_ text: String) {
+        guard var interview else { return }
+        add(Turn(device: "mac", speaker: .you, text: text, project: interview.project, topic: topic))
+        switch interview.answer(text, at: now()) {
+        case .ask(let next):
+            self.interview = interview
+            add(Turn(device: "mac", speaker: .broski, text: next, project: interview.project, topic: topic))
+        case .done(let brief):
+            self.interview = nil
+            offerBrief(brief, from: "That's all six.")
+        case .stopped:
+            self.interview = interview
+            stopInterview()
+        }
+    }
+
+    /// Shows a brief to save: a new one whole, an update as its changes. Says so when an update changes nothing.
+    private func offerBrief(_ brief: ProjectBrief, from opening: String) {
+        var brief = brief
+        brief.updated = now()
+        let offer = BriefOffer(brief: brief, old: ProjectBrief.load(root: root, project: brief.project))
+        if offer.unchanged {
+            return add(Turn(device: "mac", speaker: .broski, text: "\(opening) The \(brief.project) brief already says all that, so there's nothing to save.",
+                            project: brief.project, topic: topic))
+        }
+        let what = offer.old == nil ? "Here's the brief" : "Here's what would change in the brief, line by line; untick what you don't want"
+        add(Turn(device: "mac", speaker: .broski, text: "\(opening) \(what). Nothing is saved until you tap Save.",
+                 project: brief.project, topic: topic))
+        briefOffer = offer
+    }
+
+    func saveBrief() {
+        guard let offer = briefOffer, !isPrivate else { return }
+        do {
+            try offer.result.save(root: root)
+            briefOffer = nil
+            add(Turn(device: "mac", speaker: .note, text: "Saved the \(offer.project) brief. Broski reads it when you talk about \(offer.project).",
+                     files: ["projects/\(offer.project)/\(ProjectBrief.fileName)"], project: offer.project))
+            refreshBriefs()
+        } catch {
+            problem = "Couldn't save the brief: \(error.localizedDescription). The card is still here, so you can try again."
+        }
+    }
+
+    /// Copies the prompt that asks the project's Claude Code thread for its brief; the answer comes back by paste.
+    func copyBriefPrompt(_ name: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(ProjectBrief.claudeCodePrompt(project: name), forType: .string)
+        awaitingAnswer = name
+        add(Turn(device: "mac", speaker: .note,
+                 text: "Copied a prompt for \(name). Paste it into \(name)'s Claude Code thread, then paste its whole answer here and send it.",
+                 project: project))
+    }
+
+    /// Claude Code's answer, from the clipboard.
+    func pasteBrief() {
+        let text = NSPasteboard.general.string(forType: .string) ?? ""
+        guard let brief = ProjectBrief.pasted(text, projects: library.projectNames, current: awaitingAnswer ?? project) else {
+            return problem = "The clipboard doesn't hold a brief yet. Copy Claude Code's whole answer, then try again."
+        }
+        awaitingAnswer = nil
+        offerBrief(brief, from: "That's a brief for \(brief.project).")
+    }
+
     // MARK: Riff mode
 
     func toggleRiff() { riffing ? endRiff() : startRiff(about: nil) }
@@ -687,6 +865,9 @@ final class HomeModel: ObservableObject {
         privateTurns = []
         deep = false
         card = nil
+        // Private mode saves nothing: a brief being set up or offered waits outside it.
+        interview = nil
+        briefOffer = nil
     }
 
     func leavePrivate() {
@@ -732,9 +913,10 @@ final class HomeModel: ObservableObject {
         }
     }
 
-    /// Esc: lets go of the mic without sending, or stops the reply, or stops reading it aloud.
+    /// Esc: lets go of the mic without sending, or stops setting up a brief, or stops the reply, or stops reading it aloud.
     func escape() {
         if voice.listening { return voice.cancel() }
+        if interview != nil { return stopInterview() }
         if thinking { return stopReply() }
         stopSpeaking()
     }
@@ -781,6 +963,7 @@ struct HomeView: View {
             Divider()
             if model.isPrivate { privateBanner }
             if model.riffing { riffBanner }
+            if let interview = model.interview { interviewBanner(interview) }
             conversation
             Divider()
             composer
@@ -949,6 +1132,21 @@ struct HomeView: View {
         .background(Brand.purple.opacity(0.07))
     }
 
+    /// Setting up a brief: which project, how far along, and a way out.
+    private func interviewBanner(_ interview: BriefInterview) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.text").foregroundStyle(Brand.purple).accessibilityHidden(true)
+            Text("Setting up the \(interview.project) brief · \(interview.progress). Say “skip” to move on.")
+                .font(.system(size: 12))
+            Spacer()
+            Button("Stop") { model.stopInterview() }
+                .controlSize(.small)
+                .help("Stop setting up the brief. Nothing is saved.")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(Brand.purple.opacity(0.07))
+    }
+
     private var rulesPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("EVERY RIFF").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
@@ -1019,6 +1217,20 @@ struct HomeView: View {
                                  : "Talk to Broski about anything: a project, an idea, a decision. It remembers, and saves notes only when you say so. Type, click the mic, or hold fn.")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if !model.isPrivate {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Try").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                                    ForEach(model.suggestions, id: \.title) { suggestion in
+                                        Button { model.try(suggestion) } label: {
+                                            Label(suggestion.title, systemImage: Self.symbol(suggestion.action))
+                                                .font(.system(size: 13))
+                                        }
+                                        .buttonStyle(.link)
+                                        .disabled(model.thinking)
+                                    }
+                                }
+                                .padding(.top, 4)
+                            }
                         }
                         .padding(.top, 24)
                     }
@@ -1035,6 +1247,10 @@ struct HomeView: View {
                         .font(.system(size: 12)).id("thinking")
                     }
                     if let card = model.card { saveCard(card).id("card") }
+                    if let offer = model.briefOffer { briefCard(offer).id("brief") }
+                    if let nudge = model.briefNudge, model.briefOffer == nil, model.interview == nil, !model.isPrivate, !model.thinking {
+                        briefNudge(nudge).id("briefNudge")
+                    }
                     if let proposal = model.proposal { projectCard(proposal).id("proposal") }
                     if let problem = model.problem ?? voice.problem {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -1272,6 +1488,93 @@ struct HomeView: View {
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 12).fill(Brand.purple.opacity(0.1)))
         .padding(.leading, 34)
+    }
+
+    /// A brief to save: a new one shows every section; an update shows each changed line, ticked to keep.
+    private func briefCard(_ offer: BriefOffer) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(offer.old == nil ? "Save the \(offer.project) brief?" : "Update the \(offer.project) brief?")
+                .font(.system(size: 14, weight: .semibold))
+            if offer.old == nil {
+                ForEach(ProjectBrief.Section.allCases, id: \.self) { section in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(section.rawValue).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                        let lines = offer.brief[section]
+                        Text(lines.isEmpty ? ProjectBrief.nothingYet : lines.joined(separator: "\n"))
+                            .font(.system(size: 12))
+                            .foregroundStyle(lines.isEmpty ? .secondary : .primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+            } else {
+                ForEach(offer.changes) { change in
+                    Toggle(isOn: Binding(get: { model.briefOffer?.accepted.contains(change.id) ?? false },
+                                         set: { _ in model.briefOffer?.toggle(change.id) })) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(change.kind == .added ? "Add" : "Remove")
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.08)))
+                                .foregroundStyle(change.kind == .added ? Color.green : Color.secondary)
+                            Text(change.section.rawValue).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(change.text).font(.system(size: 12))
+                                .strikethrough(change.kind == .removed)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                }
+            }
+            HStack {
+                Button("Save") { model.saveBrief() }.buttonStyle(.borderedProminent).tint(Brand.purple)
+                    .disabled(offer.old != nil && offer.accepted.isEmpty)
+                    .help(offer.old != nil && offer.accepted.isEmpty ? "Tick at least one change to save" : "Write it to projects/\(offer.project)/brief.md")
+                Button("Not now") { model.briefOffer = nil }.buttonStyle(.borderless).foregroundStyle(.secondary)
+            }
+            Text("Saved as projects/\(offer.project)/brief.md in your Broski folder. Broski reads it when you talk about \(offer.project).")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Brand.purple.opacity(0.1)))
+        .padding(.leading, 34)
+    }
+
+    /// The project you're on has no brief yet, or one that's fallen behind its tracker: the next step, and the prompt.
+    private func briefNudge(_ nudge: BriefNudge) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(nudge.stale == nil ? "\(nudge.project) has no brief yet" : "The \(nudge.project) brief may be behind")
+                .font(.system(size: 13, weight: .semibold))
+            Text(nudge.stale ?? "A brief tells Broski what \(nudge.project) is, where it stands and what's next, so you don't have to explain it each time. Answer six questions here, or ask the project's Claude Code thread, which can read its tracker.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button(nudge.stale == nil ? "Set it up here" : "Update it here") { model.startInterview(nudge.project) }
+                    .buttonStyle(.borderedProminent).tint(Brand.purple).controlSize(.small)
+                Button("Copy a prompt for Claude Code") { model.copyBriefPrompt(nudge.project) }
+                    .controlSize(.small)
+                    .help("Paste it into \(nudge.project)'s Claude Code thread, then paste its answer back here")
+                if model.awaitingAnswer == nudge.project {
+                    Button("Paste the answer") { model.pasteBrief() }
+                        .controlSize(.small)
+                        .help("Reads Claude Code's answer from the clipboard and shows it as a brief to save")
+                }
+                Spacer()
+                Button("Not now") { model.dismissBriefNudge() }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).controlSize(.small)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
+        .padding(.leading, 34)
+    }
+
+    static func symbol(_ action: Suggestion.Action) -> String {
+        switch action {
+        case .ask: return "questionmark.bubble"
+        case .start: return "text.cursor"
+        case .setUpBrief: return "doc.text"
+        }
     }
 
     private func projectCard(_ proposal: ProjectProposal) -> some View {

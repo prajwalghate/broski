@@ -197,11 +197,158 @@ private struct GeneralSettings: View {
             } message: {
                 Text("~/Broski moves to iCloud Drive › Broski. Nothing is deleted. Broski restarts in the new place.")
             }
+            StartFreshSection(app: app)
             Section {
                 Toggle("Open Broski at login", isOn: Binding(get: { app.launchesAtLogin }, set: { app.setLaunchesAtLogin($0) }))
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Settings › General › Start fresh: three separate levels, each saying what it clears and what it keeps. None
+/// deletes anything.
+struct StartFreshSection: View {
+    @ObservedObject var app: AppModel
+    @State private var confirmForget = false
+    @State private var forgotten: String?
+    @State private var startingFresh = false
+    @State private var restoring: URL?
+
+    var body: some View {
+        Section {
+            Toggle(isOn: app.binding(\.memoryPaused)) {
+                Text("Pause memory")
+                EffectText(effect: StartFresh.effect(.pauseMemory), first: "Stops")
+            }
+            LabeledContent {
+                Button("Forget…") { confirmForget = true }
+            } label: {
+                Text("Forget what Broski knows about me")
+                if let forgotten {
+                    Text(forgotten)
+                } else {
+                    EffectText(effect: StartFresh.effect(.forgetMe))
+                }
+            }
+            LabeledContent {
+                Button("Start fresh…") { startingFresh = true }
+            } label: {
+                Text("Start completely fresh")
+                EffectText(effect: StartFresh.effect(.everything))
+            }
+            ForEach(app.archivedFolders, id: \.self) { archive in
+                LabeledContent {
+                    Button("Put back…") { restoring = archive }
+                } label: {
+                    Text(archive.lastPathComponent)
+                    Text("An archived Broski folder, next to the one in use.")
+                }
+            }
+        } header: {
+            Text("Start fresh")
+        } footer: {
+            Text("Nothing here deletes anything. An archived folder stays next to your Broski folder until you remove it yourself.")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .confirmationDialog("Forget what Broski knows about you?", isPresented: $confirmForget) {
+            Button("Forget") { forgotten = app.forgetAboutMe() }
+        } message: {
+            Text(StartFresh.effect(.forgetMe).summary)
+        }
+        .confirmationDialog("Put back “\(restoring?.lastPathComponent ?? "")”?",
+                            isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } })) {
+            Button("Put it back and restart Broski") { if let restoring { app.restoreFolder(restoring) } }
+        } message: {
+            Text("The Broski folder in use now is archived first, so nothing is lost. Broski restarts.")
+        }
+        .sheet(isPresented: $startingFresh) { StartFreshSheet(app: app, shown: $startingFresh) }
+    }
+}
+
+/// Settings › Projects › Briefs: each project's brief, opening it, and whether replies read it.
+struct BriefsSection: View {
+    @ObservedObject var app: AppModel
+
+    var body: some View {
+        Section {
+            if app.library.projectNames.isEmpty {
+                Text("No projects yet.").foregroundStyle(.secondary)
+            }
+            ForEach(app.library.projectNames, id: \.self) { name in
+                BriefRow(app: app, project: name)
+            }
+        } header: {
+            Text("Briefs")
+        } footer: {
+            Text("A brief says what a project is and where it stands, and Broski reads it when you talk about that project. To make one, say “let's set up” and the project's name in the conversation, or use ⌘K. A paused brief stays in your folder but isn't read.")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// "Clears … Keeps …" under a Start fresh option.
+private struct EffectText: View {
+    var effect: StartFresh.Effect
+    var first = "Clears"
+
+    var body: some View {
+        Text("\(first): " + Self.list(effect.clears) + ".\nKeeps: " + Self.list(effect.keeps) + ".")
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// "What Broski knows about you; your conversations…": one sentence, so later items start in lower case
+    /// (names like Broski keep their capital).
+    static func list(_ items: [String]) -> String {
+        items.enumerated().map { index, item in
+            let word = item.prefix { $0.isLetter }
+            return index == 0 || ["Broski", "About", "Claude"].contains(String(word)) ? item : item.prefix(1).lowercased() + item.dropFirst()
+        }.joined(separator: "; ")
+    }
+}
+
+extension StartFresh.Effect {
+    /// For a confirmation: what goes, then what stays.
+    var summary: String {
+        "Clears: " + EffectText.list(clears) + ".\n\nKeeps: " + EffectText.list(keeps) + "."
+    }
+}
+
+/// Starting completely fresh: what moves aside, what comes along, and whether the model keys go too.
+struct StartFreshSheet: View {
+    @ObservedObject var app: AppModel
+    @Binding var shown: Bool
+    @State private var forgetKeys = false
+
+    var body: some View {
+        let effect = StartFresh.effect(.everything, forgetKeys: forgetKeys)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Start completely fresh?").font(.title3.weight(.semibold))
+            Text("Your Broski folder moves aside as “\(StartFresh.nextArchive(of: app.root).lastPathComponent)” and Broski restarts in an empty one, with the first conversation again. You can put the old folder back from here at any time. On your iPhone, choose the Broski folder again afterwards (Settings › Use my Mac's Broski folder), or it keeps using the archived one.")
+                .font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+            list("Moves aside", effect.clears)
+            list("Kept", effect.keeps)
+            Toggle("Also forget my model keys on this Mac", isOn: $forgetKeys)
+                .toggleStyle(.checkbox)
+            HStack {
+                Spacer()
+                Button("Cancel") { shown = false }.keyboardShortcut(.cancelAction)
+                Button("Move it aside and restart") {
+                    shown = false
+                    app.startCompletelyFresh(forgetKeys: forgetKeys)
+                }
+                .buttonStyle(.borderedProminent).tint(Brand.purple)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+
+    private func list(_ title: String, _ lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            ForEach(lines, id: \.self) { Text("• " + $0).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true) }
+        }
     }
 }
 
@@ -292,6 +439,7 @@ private struct ProjectSettings: View {
             } footer: {
                 Text("Each folder inside these becomes a project you can name: “in the <folder> project, …”. \(library.projects.filter { $0.folder != nil }.count) found.")
             }
+            BriefsSection(app: app)
             Section("Notes") {
                 LabeledContent("Saved in") {
                     HStack {
@@ -889,6 +1037,38 @@ private struct CompanionSettings: View {
 
     private func option(_ keyPath: WritableKeyPath<CheckIn.Options, Bool>) -> Binding<Bool> {
         Binding(get: { app.config.checkInOptions[keyPath: keyPath] }, set: { value in app.update { $0.checkInOptions[keyPath: keyPath] = value } })
+    }
+}
+
+/// One project's brief: whether there is one, opening it, and whether replies read it.
+private struct BriefRow: View {
+    @ObservedObject var app: AppModel
+    var project: String
+
+    var body: some View {
+        let brief = ProjectBrief.load(root: app.root, project: project)
+        let used = !app.config.pausedBriefs.contains(project)
+        LabeledContent {
+            HStack(spacing: 8) {
+                Toggle("Use the \(project) brief", isOn: Binding(get: { used && brief != nil }, set: { on in
+                    app.update { config in
+                        config.pausedBriefs.removeAll { $0 == project }
+                        if !on { config.pausedBriefs.append(project) }
+                    }
+                }))
+                .toggleStyle(.switch).controlSize(.small).labelsHidden()
+                .disabled(brief == nil)
+                .help(brief == nil ? "No brief to use yet" : used ? "Pause using this brief" : "Use this brief again")
+                Button("Open in editor") { NSWorkspace.shared.open(ProjectBrief.file(root: app.root, project: project)) }
+                    .disabled(brief == nil)
+                    .help(brief == nil ? "No brief yet: set one up in the conversation" : "Open projects/\(project)/brief.md")
+            }
+        } label: {
+            Text(project)
+            Text(brief.map { b in
+                (b.updated.map { "Updated \(Recall.dayString($0))" } ?? "Written by hand") + (used ? "" : " · paused")
+            } ?? "No brief yet")
+        }
     }
 }
 

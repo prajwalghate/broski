@@ -21,6 +21,8 @@ final class PhoneStore: ObservableObject {
     @Published private(set) var sharedUnavailable = false
     /// Projects the Mac keeps away from Claude (config.localOnlyProjects); the phone honours them too.
     private(set) var localOnly: Set<String> = []
+    /// The Mac's config.json as last read: memory paused, briefs paused. The defaults until it's readable.
+    private(set) var config: BroskiConfig = .defaults
     /// Which model does what (config.models, set on the Mac); nil means Claude by role.
     private(set) var models: ModelSettings?
     /// Open links you share (config.readLinks, set on the Mac).
@@ -64,6 +66,10 @@ final class PhoneStore: ObservableObject {
         root = url
         sharedFolderName = url.lastPathComponent
         if stale, let fresh = try? url.bookmarkData() { UserDefaults.standard.set(fresh, forKey: Self.bookmarkKey) }
+        // The Mac started fresh and this bookmark followed the old folder aside.
+        if url.lastPathComponent.contains(" (archived ") {
+            problem = "This is an archived Broski folder: your Mac started fresh. Choose the Broski folder again in Settings."
+        }
         return true
     }
 
@@ -170,6 +176,7 @@ final class PhoneStore: ObservableObject {
     func refreshLocalOnly() {
         let (names, readable, config) = Self.localOnlyProjects(in: root, projects: projects)
         localOnly = names
+        self.config = config ?? .defaults
         models = config?.models
         readLinks = config?.readLinks ?? true
         // Failing closed silently would just look like Claude stopped answering, so say why.
@@ -187,12 +194,16 @@ final class PhoneStore: ObservableObject {
     private static func localOnlyProjects(in root: URL, projects: [String]) -> (names: Set<String>, readable: Bool, config: BroskiConfig?) {
         let fm = FileManager.default
         let url = root.appendingPathComponent("config.json")
+        // Fails closed: every project local only, and memory paused, until the Mac's config can be read.
+        var closed = BroskiConfig.defaults
+        closed.memoryPaused = true
+        closed.localOnlyProjects = projects
         guard fm.fileExists(atPath: url.path) else {
             let pending = fm.fileExists(atPath: root.appendingPathComponent(".config.json.icloud").path)
-            return (pending ? Set(projects) : [], true, nil)
+            return (pending ? Set(projects) : [], true, pending ? closed : nil)
         }
         guard let data = try? Data(contentsOf: url),
-              let config = try? JSONDecoder().decode(BroskiConfig.self, from: data) else { return (Set(projects), false, nil) }
+              let config = try? JSONDecoder().decode(BroskiConfig.self, from: data) else { return (Set(projects), false, closed) }
         return (Set(config.localOnlyProjects), true, config)
     }
 

@@ -107,6 +107,9 @@ struct CommandPalette: View {
         case .memory: return "book"
         case .vault: return "lock.shield"
         case .settings: return "gearshape"
+        case .setUpBrief: return "doc.text"
+        case .askClaudeCode: return "doc.on.clipboard"
+        case .howItWorks: return "questionmark.circle"
         }
     }
 }

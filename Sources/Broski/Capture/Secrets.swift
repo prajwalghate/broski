@@ -44,6 +44,12 @@ enum Secrets {
         return true
     }
 
+    /// Start fresh with "also forget my model keys": every model provider's key leaves this Mac. Other secrets stay.
+    @discardableResult
+    static func forgetModelKeys() -> Bool {
+        ([claudeKey] + names(withPrefix: "model.").map { "model." + $0 }).allSatisfy { set(nil, for: $0) }
+    }
+
     /// The saved names starting with `prefix`, without it ("webhook." → ["team", "alerts"]).
     static func names(withPrefix prefix: String) -> [String] {
         lock.lock()

@@ -69,6 +69,10 @@ public struct BroskiConfig: Codable, Equatable {
     public var reflection: Bool = true
     /// Open links you share and send the page's text with your message (a site's pages only when you ask).
     public var readLinks: Bool = true
+    /// Memory paused: what Broski knows about you, and what you said before, stay in the folder but aren't used.
+    public var memoryPaused: Bool = false
+    /// Projects whose brief stays in the folder but isn't read into a conversation.
+    public var pausedBriefs: [String] = []
 
     /// The conversation opens on the main shortcut and fn.
     public var conversationFirst: Bool { frontDoor != "note" }
@@ -170,6 +174,8 @@ public struct BroskiConfig: Codable, Equatable {
         models = (try? c.decodeIfPresent(ModelSettings.self, forKey: .models)) ?? d.models
         reflection = (try? c.decodeIfPresent(Bool.self, forKey: .reflection)) ?? d.reflection
         readLinks = (try? c.decodeIfPresent(Bool.self, forKey: .readLinks)) ?? d.readLinks
+        memoryPaused = (try? c.decodeIfPresent(Bool.self, forKey: .memoryPaused)) ?? d.memoryPaused
+        pausedBriefs = (try? c.decodeIfPresent([String].self, forKey: .pausedBriefs)) ?? d.pausedBriefs
         if wakeWords.isEmpty { wakeWords = d.wakeWords }
         silenceSeconds = min(max(silenceSeconds, 0.8), 6)
     }

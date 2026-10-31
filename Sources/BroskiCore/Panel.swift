@@ -16,10 +16,14 @@ public struct ReplyContext: Codable, Equatable, Sendable {
     public var recalled: [String]?
 
     /// Nil when the reply used nothing, and always in private mode, which reads no memory, projects or recall.
-    public init?(aboutYou: Bool, page: String?, decisions: Int, recalled: [String], isPrivate: Bool = false) {
-        guard !isPrivate, aboutYou || page != nil || decisions > 0 || !recalled.isEmpty else { return nil }
+    /// The project whose brief it read.
+    public var brief: String?
+
+    public init?(aboutYou: Bool, page: String?, decisions: Int, recalled: [String], isPrivate: Bool = false, brief: String? = nil) {
+        guard !isPrivate, aboutYou || page != nil || brief != nil || decisions > 0 || !recalled.isEmpty else { return nil }
         self.aboutYou = aboutYou ? true : nil
         self.page = page
+        self.brief = brief
         self.decisions = decisions > 0 ? decisions : nil
         self.recalled = recalled.isEmpty ? nil : recalled
     }
@@ -29,6 +33,7 @@ public struct ReplyContext: Codable, Equatable, Sendable {
         var parts: [String] = []
         if aboutYou == true { parts.append("what I know about you") }
         if let page { parts.append("the \(page) page") }
+        if let brief { parts.append("the \(brief) brief") }
         if let decisions { parts.append(Self.count(decisions, "decision")) }
         if let recalled, !recalled.isEmpty { parts.append("\(recalled.count) from earlier") }
         return "Used " + Self.list(parts)
@@ -39,6 +44,7 @@ public struct ReplyContext: Codable, Equatable, Sendable {
         var out: [String] = []
         if aboutYou == true { out.append("What Broski knows about you") }
         if let page { out.append("The \(page) page") }
+        if let brief { out.append("The \(brief) brief") }
         if let decisions { out.append("\(decisions) current decision\(decisions == 1 ? "" : "s")") }
         return out + (recalled ?? [])
     }
@@ -89,6 +95,36 @@ public enum BroskiLines {
     }
 }
 
+/// One thing to try from the empty conversation.
+public struct Suggestion: Equatable, Sendable {
+    public enum Action: Equatable, Sendable {
+        /// Send these words.
+        case ask(String)
+        /// Put these words in the box to finish.
+        case start(String)
+        case setUpBrief(String)
+    }
+
+    public var title: String
+    public var action: Action
+}
+
+extension BroskiLines {
+    /// Three things to try from an empty conversation: a brief first when the project you're on has none.
+    public static func tryThis(project: String?, hasBrief: Bool) -> [Suggestion] {
+        let howItWorks = Suggestion(title: "Ask how Broski works", action: .ask("How does Broski work?"))
+        guard let project else {
+            return [Suggestion(title: "Tell Broski about a project", action: .start("I'm working on ")),
+                    Suggestion(title: "Think something through", action: .start("Help me decide ")),
+                    howItWorks]
+        }
+        let brief = hasBrief
+            ? Suggestion(title: "Where does \(project) stand?", action: .ask("Where does \(project) stand?"))
+            : Suggestion(title: "Set up the \(project) brief", action: .setUpBrief(project))
+        return [brief, Suggestion(title: "Plan the next step on \(project)", action: .ask("What should I do next on \(project)?")), howItWorks]
+    }
+}
+
 // MARK: The command palette
 
 /// One thing ⌘K can do, with the words it answers to.
@@ -100,6 +136,11 @@ public struct PaletteItem: Equatable, Sendable, Identifiable {
         case dashboard, memory, vault
         /// A Settings page by its id: "models", "voice", "general".
         case settings(String)
+        /// The brief interview for a project.
+        case setUpBrief(String)
+        /// Copy the prompt that asks Claude Code for a project's brief.
+        case askClaudeCode(String)
+        case howItWorks
     }
 
     public var title: String
@@ -124,8 +165,11 @@ public enum Palette {
         public var isPrivate: Bool
         public var riffing: Bool
         public var deep: Bool
+        /// Projects that have a brief.
+        public var briefs: Set<String>
 
-        public init(projects: [String], current: String?, isPrivate: Bool, riffing: Bool, deep: Bool) {
+        public init(projects: [String], current: String?, isPrivate: Bool, riffing: Bool, deep: Bool, briefs: Set<String> = []) {
+            self.briefs = briefs
             self.projects = projects
             self.current = current
             self.isPrivate = isPrivate
@@ -159,6 +203,20 @@ public enum Palette {
         if state.current != nil {
             items.append(PaletteItem("No project", "Talk without a project", keywords: ["project", "clear"], action: .project(nil)))
         }
+        // Private mode saves nothing, so it doesn't offer to set up a brief.
+        if !state.isPrivate {
+            let ordered = state.current.map { current in [current] + state.projects.filter { $0 != current } } ?? state.projects
+            items += ordered.map { name in
+                state.briefs.contains(name)
+                    ? PaletteItem("Update the \(name) brief", "Six questions; you accept each change", keywords: ["brief", "onboard", "set up"],
+                                  action: .setUpBrief(name))
+                    : PaletteItem("Onboard \(name)", "Six questions make its brief", keywords: ["brief", "set up"], action: .setUpBrief(name))
+            }
+            if let current = state.current {
+                items.append(PaletteItem("Ask Claude Code for the \(current) brief", "Copy a prompt for its Claude Code thread",
+                                         keywords: ["brief", "prompt", "claude", "tracker"], action: .askClaudeCode(current)))
+            }
+        }
         items += [
             PaletteItem("Open the dashboard", "Every project, its page and tracker", keywords: ["projects", "board"],
                         action: .dashboard),
@@ -170,6 +228,7 @@ public enum Palette {
                         action: .settings("models")),
             PaletteItem("Settings: Voice", "Mic, recognition and reading aloud", keywords: ["mic", "speech"],
                         action: .settings("voice")),
+            PaletteItem("How Broski works", "What it does, and what to try", keywords: ["help", "guide", "broski"], action: .howItWorks),
         ]
         return items
     }

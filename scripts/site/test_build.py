@@ -193,6 +193,18 @@ class GuideTests(unittest.TestCase):
                          [("Can I type?", "Yes. See [Talking](talking.md)."), ("Is it `free`?", "Yes.\n\nReally.")])
         self.assertEqual(build.common_questions("# T\n\nNo questions.\n"), [])
 
+    def test_the_apps_guide_is_made_from_the_docs_as_they_are_now(self):
+        bundled = build.GUIDE_SWIFT.read_text(encoding="utf-8")
+        self.assertEqual(bundled, build.guide_swift(),
+                         "docs/ changed since the app's guide was made: run python3 scripts/site/build.py --guide")
+        guide = build.in_app_guide()
+        self.assertLess(len(guide), 24000, "the guide goes with a message, so it stays compact")
+        for doc in build.DOCS:
+            if doc.group == "Use Broski":
+                self.assertIn(doc.description, guide)
+        self.assertNotIn("```", guide)
+        self.assertIn("Q: ", guide)
+
 
 class SiteTests(unittest.TestCase):
     """Builds the real site from site/ and docs/ into a temporary folder."""

@@ -86,7 +86,7 @@ public enum FolderCheck {
         for project in [nil] + store.projectNames().map(Optional.some) {
             let folder = store.folder(for: project)
             let files = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
-                .filter { $0.pathExtension == "md" && $0.lastPathComponent != ProjectPage.fileName }
+                .filter { $0.pathExtension == "md" && $0.lastPathComponent != ProjectPage.fileName && $0.lastPathComponent != ProjectBrief.fileName }
             format.files += files.count
             for file in files {
                 if ItemStore.read(file, project: project) != nil { format.read += 1 } else { format.unreadable += 1 }

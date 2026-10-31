@@ -2,6 +2,15 @@
 
 All notable changes to Broski are in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Mac app and the iPhone app have their own version numbers; each entry names the ones that changed. The iPhone stayed at 0.6.0 while Mac 0.9.1 to 0.9.6 shipped, so iPhone changes in those releases are listed under the Mac version.
 
+## Mac 0.13.0, iPhone 0.8.0 - 2026-11-01
+
+### Added
+
+- Project briefs: a short page per project (what it is, stage, goal now, where things live, decisions so far, open work, stuck on), read into conversations about that project. Make one by answering six questions ("let's set up recipe box", or ⌘K › Onboard) or by pasting Claude Code's answer to a prompt Broski copies for you. Nothing is saved until you tap Save, and an update shows each changed line to accept or not.
+- A project without a brief shows a card with the next step; a brief that has fallen behind its tracker offers a refresh. Settings › Projects › Briefs opens a brief in your editor or pauses it.
+- Settings › General › Start fresh, in three separate levels that each say what they clear and keep: pause memory, forget what Broski knows about you, or move the whole folder aside and start again (and put an archived folder back). Nothing is deleted.
+- Ask Broski "how do I…" about itself: it answers from a short guide made from the docs. ⌘K › How Broski works, and three things to try in an empty conversation.
+
 ## Mac 0.12.0, iPhone 0.7.3 - 2026-10-31
 
 ### Added

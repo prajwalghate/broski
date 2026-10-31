@@ -95,7 +95,7 @@ final class Library: ObservableObject {
         try? FileManager.default.createDirectory(at: store.inboxDir, withIntermediateDirectories: true)
         // Broski's own writes (pages, settings, logs) and Finder's .DS_Store change no note, so they don't reload; nor
         // do the conversation, usage, memory and vault files (the conversation has its own refresh).
-        let ignored: Set<String> = ["PROJECT.md", "config.json", ".DS_Store"]
+        let ignored: Set<String> = ["PROJECT.md", "brief.md", "config.json", ".DS_Store"]
         let notNotes = ["/.broski/", "/conversations/", "/usage/", "/memory/", "/vault/", "/evals/"]
         watcher = FileWatcher(url: store.root) { [weak self] paths in
             let notes = paths.filter { path in !notNotes.contains { path.contains($0) } && !ignored.contains((path as NSString).lastPathComponent) }

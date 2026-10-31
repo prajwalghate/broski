@@ -532,6 +532,84 @@ def common_questions(text: str) -> List[Tuple[str, str]]:
     return answers
 
 
+GUIDE_SWIFT = ROOT / "Sources" / "BroskiCore" / "HowToGuide.swift"
+
+
+def gist(text: str, enough: int = 70) -> str:
+    """The opening sentences of some markdown, as plain text: enough to say what it's about."""
+    sentences = re.split(r"(?<=[.?!])\s+(?=[A-Z\"“(])", plain(text))
+    out = ""
+    for sentence in sentences:
+        out = (out + " " + sentence).strip()
+        if len(out) >= enough:
+            break
+    return out
+
+
+def in_app_guide() -> str:
+    """The compact guide Broski answers "how do I…" from: for each guide on using it, what each section is about in
+    a sentence or two (its first paragraph or item), and its common questions. Made from docs/, bundled in the app, kept in step by a test."""
+    parts = []
+    for doc in DOCS:
+        if doc.group != "Use Broski":
+            continue
+        text = (ROOT / "docs" / doc.file).read_text(encoding="utf-8")
+        lines = text.replace("\r\n", "\n").split("\n")
+        title = plain(lines[0].lstrip("# ")) if lines and lines[0].startswith("# ") else doc.file
+        out = ["# " + title, doc.description]
+        questions = common_questions(text)
+        section = None
+        said = False  # the section's first paragraph is in
+        block: List[str] = []
+        fenced = False
+
+        def flush() -> None:
+            nonlocal said
+            paragraph = " ".join(line.strip() for line in block).strip()
+            block.clear()
+            if paragraph and not said and section not in ("Common questions", "Next", "Sources"):
+                line = gist(re.sub(r"^[-*]\s+|^\d+\.\s+", "", paragraph), 110)
+                # "A short welcome walks you through setup:" says little alone; the first item after it goes with it.
+                if out[-1].endswith(":"):
+                    out[-1] += " " + line
+                    said = True
+                else:
+                    out.append(line)
+                    said = not line.endswith(":")
+
+        for line in lines[1:]:
+            if line.strip().startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced or line.lstrip().startswith(("|", ">", "<")):
+                continue
+            heading = re.match(r"^(#{2,3})\s+(.*)$", line)
+            if heading:
+                flush()
+                if len(heading.group(1)) == 2:
+                    section = plain(heading.group(2))
+                    said = False
+                    if section not in ("Common questions", "Next", "Sources"):
+                        out.append("## " + section)
+                continue
+            if not line.strip() or re.match(r"^\s*([-*]|\d+\.)\s", line):
+                flush()
+            if line.strip():
+                block.append(line)
+        flush()
+        out += ["Q: %s A: %s" % (plain(q), gist(a, 120)) for q, a in questions]
+        parts.append("\n".join(out))
+    return "\n\n".join(parts)
+
+
+def guide_swift() -> str:
+    """HowToGuide.swift, holding the compact guide."""
+    guide = in_app_guide()
+    assert '"""#' not in guide
+    return ("// Made by scripts/site/build.py --guide from docs/. Don't edit: change the docs, then run it again.\n\n"
+            "extension HowTo {\n    public static let guide = #\"\"\"\n" + guide + "\n\"\"\"#\n}\n")
+
+
 def human_date(day: str) -> str:
     date = datetime.date.fromisoformat(day)
     return "%d %s %d" % (date.day, date.strftime("%B"), date.year)
@@ -1271,7 +1349,11 @@ def build(out: Path, site: str, repo: str, owner: Optional[str] = None, verify: 
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Build Broski's website.")
+    if (argv if argv is not None else sys.argv[1:]) == ["--guide"]:
+        GUIDE_SWIFT.write_text(guide_swift(), encoding="utf-8")
+        print("Wrote %s (%d characters)" % (GUIDE_SWIFT.relative_to(ROOT), len(in_app_guide())))
+        return 0
+    parser = argparse.ArgumentParser(description="Build Broski's website. --guide alone writes the app's guide instead.")
     parser.add_argument("--out", required=True, help="the folder to build into (it's replaced)")
     parser.add_argument("--site", required=True, help="the site's address, such as https://owner.github.io/broski")
     parser.add_argument("--repo", required=True, help="the repository's address, such as https://github.com/owner/broski")

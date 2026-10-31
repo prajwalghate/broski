@@ -12,7 +12,8 @@ Press ⌥⇧B on the Mac, or open the Talk tab on the iPhone. It's one conversat
 - **Share anything.** Paste or drop screenshots, photos, PDFs and other files anywhere in the window, or take a screenshot with the camera button. They're kept in the project's `resources/` folder and sent with your message.
 - **Links are read.** Paste a link and Broski opens the page on your device before it replies (pages drawn by JavaScript in a hidden browser that keeps no cookies), keeps a copy in the project's resources, and sends its text with your message, fenced as data. An average page costs about half a cent on Sonnet. Pages behind a login can't be read. Settings › Models › Links turns it off.
 - **Threads.** Broski names the topic of each turn; the thread menu shows one topic at a time, and replies then focus on it.
-- **⌘K for everything.** Type a few letters to start a riff, go private, think harder, switch project, or open the dashboard, the vault or Settings. Arrows move, Return does it, Esc closes.
+- **⌘K for everything.** Type a few letters to start a riff, go private, think harder, switch project, onboard a project, or open the dashboard, the vault or Settings. Arrows move, Return does it, Esc closes.
+- **It explains itself.** Ask "how do I…" about Broski and it answers from a short guide made from these pages. ⌘K › **How Broski works** gives the overview, and an empty conversation offers three things to try.
 - **Each project has a colour.** A small dot next to the project's name, the same in the conversation and the dashboard, on every device. The name is always there too.
 - **Return sends.** Shift-, Option- or Control-Return adds a line. Up in an empty box brings back your last message. Esc stops listening, then stops a reply, then stops reading aloud. The Send button turns into Stop while Broski replies, and a failed reply gets **Try again**.
 
@@ -26,6 +27,7 @@ Press ⌥⇧B on the Mac, or open the Talk tab on the iPhone. It's one conversat
 | "think harder" | The next replies come from the deep model |
 | "save that" | Offers a save card for what was just said |
 | "switch to recipe box", "let's talk about recipe box" | Moves the conversation to that project |
+| "let's set up recipe box", "onboard recipe box" | Six questions that make the project's brief (see below) |
 | "go private", "leave private" | A blank slate that reads and keeps nothing (see below) |
 | "let's riff", "let's riff about …" | Starts riff mode |
 | "rule: no code talk" | Adds a rule for every riff |
@@ -57,9 +59,20 @@ On the iPhone: Talk › ⋯ › Riff, or "Riff with Broski" from Siri or the Act
 
 "Go private" starts a blank slate: Broski doesn't read what it knows about you or your notes, and keeps nothing. When you leave, keep it or let it go. Replies still come from your chosen model; [Privacy](privacy.md) explains exactly what that means.
 
+### Project briefs
+
+A brief is a short page on what a project is and where it stands: what it is, its stage, the goal now, where things live, decisions so far, open work, and what you're stuck on. Broski reads it, fenced as data, whenever you talk about that project, so you don't have to explain the project each time. It's kept as `projects/<name>/brief.md` in your Broski folder, and written only when you tap Save. A section with nothing in it says "Nothing yet." rather than going missing.
+
+There are two ways to make one, and both end in a card you look over before anything is saved:
+
+- **Answer six questions.** Say "let's set up recipe box" (or ⌘K › **Onboard recipe box**, or **Set it up here** on the card a project without a brief shows). Broski asks one question at a time, with no model involved; "skip" leaves a section empty and "stop" ends it. Decisions so far come from the decisions you've already saved.
+- **Ask the project's Claude Code thread.** **Copy a prompt for Claude Code** puts a prompt on the clipboard that asks Claude Code to summarise the project in the brief's template, using its tracker tools and the repository, citing tracker items. Paste it into that project's Claude Code thread, then paste its whole answer back into the conversation (or tap **Paste the answer**). Broski never runs Claude Code or a project's tools itself.
+
+Updating a brief the same way shows what would change, line by line, each ticked to keep; untick what you don't want. When a brief is two weeks old and its tracker has moved on, the card offers a refresh. Settings › Projects › Briefs opens each brief in your editor and can pause one: a paused brief stays in the folder but isn't read. Private mode never reads a brief.
+
 ### It learns, and you can undo it
 
-When the Mac is idle, reflection rereads what you said (never its own replies, files or local-only projects) and updates what it knows about you. Every change is logged with why and can be undone: menu bar › **What Broski knows** shows what it knows about you, every project's decisions, and what reflection changed.
+When the Mac is idle, reflection rereads what you said (never its own replies, files or local-only projects) and updates what it knows about you. Every change is logged with why and can be undone: menu bar › **What Broski knows** shows what it knows about you, every project's decisions, and what reflection changed. To pause memory, forget what Broski knows about you, or start completely fresh, see Settings › General › **Start fresh** ([Privacy](privacy.md#starting-fresh)).
 
 ## Quick notes
 
@@ -161,6 +174,14 @@ No. When you decide something or name a todo or a bug, Broski offers a save card
 ### How do I make Broski forget something it learned about me?
 
 Say "forget that …", or just "forget that" for the last fact. Menu bar › **What Broski knows** shows everything it knows about you and what reflection changed, and every change can be undone.
+
+### What is a project brief?
+
+A short page on what a project is and where it stands, in seven fixed sections, kept as `brief.md` in the project's folder. Broski reads it when you talk about that project. Make one by saying "let's set up" and the project's name, or by asking the project's Claude Code thread with the prompt Broski copies for you.
+
+### How do I get Claude Code to write a project's brief?
+
+Tap **Copy a prompt for Claude Code** on the project's card (or ⌘K › Ask Claude Code for the brief), paste it into that project's Claude Code thread, then paste the whole answer back into Broski. It becomes a card, and nothing is saved until you tap Save.
 
 ### What is riff mode?
 

@@ -118,6 +118,7 @@ enum Snapshots {
         }
         for tab in SettingsTab.allCases {
             render(SettingsView(app: app, tab: tab), size: NSSize(width: 820, height: 580), to: folder, "settings-\(tab.rawValue)")
+
         }
     }
 
@@ -190,6 +191,13 @@ enum Snapshots {
             ]
             for turn in seeded { try? store.append(turn) }
         }
+        // trailmix has a brief, so the conversation about it doesn't suggest one.
+        var brief = ProjectBrief(project: "trailmix", updated: Date().addingTimeInterval(-86_400), source: "interview")
+        brief[.whatItIs] = ["A trading bot that paper-trades a strategy before it touches real money."]
+        brief[.stage] = ["Building: the backtester works, live trading doesn't yet."]
+        brief[.goalNow] = ["A clean paper-trading week."]
+        brief[.openWork] = ["Write the stop-loss guard", "Replay the March crash day"]
+        try? brief.save(root: app.root)
         let home = app.homeModel
         home.reload()
         home.card = SaveCard(project: "trailmix", items: [
@@ -210,6 +218,28 @@ enum Snapshots {
         home.goPrivate()
         render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 420), to: folder, "home-private")
         home.discardPrivate()
+        // An update to the brief: each changed line, ticked to keep.
+        var newer = brief
+        newer[.stage] = ["Paper trading: the guard is in."]
+        newer[.openWork] = ["Replay the March crash day", "Set the pass bar for the paper week"]
+        home.briefOffer = BriefOffer(brief: newer, old: brief)
+        render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 820), to: folder, "home-brief-update")
+        home.briefOffer = nil
+
+        // A project with no brief: the card with the next step, then the interview under way.
+        let briefless = FileManager.default.temporaryDirectory.appendingPathComponent("broski-snapshot-brief-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: briefless, withIntermediateDirectories: true)
+        try? Memory.remember("Prefers short, direct answers", root: briefless, device: "mac")
+        let onboarding = HomeModel(root: briefless, library: app.library, voice: app.voice) { BroskiConfig.defaults }
+        onboarding.now = { Calendar.current.date(bySettingHour: 14, minute: 10, second: 0, of: Date()) ?? Date() }
+        onboarding.project = "trailmix"
+        render(HomeView(model: onboarding, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 640), to: folder, "home-brief-none")
+        onboarding.startInterview("trailmix")
+        onboarding.send("A trading bot that paper-trades a strategy before real money.")
+        render(HomeView(model: onboarding, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 560), to: folder, "home-brief-interview")
+        while onboarding.interview != nil { onboarding.send("skip") }
+        render(HomeView(model: onboarding, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 1100), to: folder, "home-brief-new")
+        try? FileManager.default.removeItem(at: briefless)
 
         // What Broski knows, with a remembered fact and a decision that replaced an earlier one.
         try? Memory.remember("Prefers short, direct answers", root: app.root, device: "mac")
@@ -295,6 +325,12 @@ enum Snapshots {
             try? UsageLog.append(UsageLog.Entry(at: Date().addingTimeInterval(-days * 86_400), device: "mac", role: .everyday, provider: "claude",
                                                 model: model, project: nil, usage: ModelUsage(input: tokens, output: tokens / 10)), root: app.root)
         }
+        // Start fresh and Briefs sit at the ends of their tabs, so each is drawn on its own too.
+        render(Form { StartFreshSection(app: app) }.formStyle(.grouped).frame(width: 640, height: 560), size: NSSize(width: 640, height: 560),
+               to: folder, "settings-start-fresh")
+        render(StartFreshSheet(app: app, shown: .constant(true)), size: NSSize(width: 460, height: 470), to: folder, "settings-start-fresh-sheet")
+        render(Form { BriefsSection(app: app) }.formStyle(.grouped).frame(width: 640, height: 300), size: NSSize(width: 640, height: 300),
+               to: folder, "settings-briefs")
         render(ModelsSettings(app: app).frame(width: 640, height: 1180), size: NSSize(width: 640, height: 1180), to: folder, "settings-models-filled")
         // The website's picture of Settings › Models (site/assets/screens).
         render(ModelsSettings(app: app).frame(width: 640, height: 700), size: NSSize(width: 640, height: 700), to: folder, "settings-models-site")

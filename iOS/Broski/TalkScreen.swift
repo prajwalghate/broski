@@ -232,18 +232,20 @@ final class PhoneHome: ObservableObject {
     }
 
     private func reply(attachments: [ModelPart] = []) {
-        let history = visibleTurns
+        // What was said about a local-only project stays out of a reply about anything else.
+        let history = isPrivate ? visibleTurns : LocalOnly.sendable(visibleTurns, project: project, localOnly: store.localOnly)
         let said = history.last(where: { $0.speaker == .you })?.text ?? ""
         let localOnly = touchesLocalOnly(history.suffix(12).map(\.text).joined(separator: "\n"))
+        // What the folder may give this reply, by the Mac's switches: nothing in private mode, no memory while it's paused.
+        let memory = ReplyMemory.gather(root: store.root, project: project, isPrivate: isPrivate, config: store.config)
         let recall = isPrivate ? [] : Recall.find(said, index: recallSearch(), excluding: Set(history.map { "turn:\($0.id)" }),
-                                                   hidden: localOnly ? [] : store.localOnly)
-        let decisions = isPrivate ? [] : project.map { DecisionLog.current(root: store.root, project: $0) } ?? []
-        let request = ConversationContext.build(aboutYou: isPrivate ? nil : Memory.aboutYou(root: store.root),
+                                                   hidden: localOnly ? [] : store.localOnly).filter(memory.allows)
+        let request = ConversationContext.build(aboutYou: memory.aboutYou,
                                                 page: isPrivate ? nil : project.flatMap { store.pages[$0] },
                                                 project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
-                                                decisions: decisions, recall: recall, attachments: attachments,
+                                                decisions: memory.decisions, recall: recall, attachments: attachments,
                                                 firstRun: !isPrivate && FirstRun.active(turns: history),
-                                                riff: riffing ? riffRules : nil)
+                                                riff: riffing ? riffRules : nil, brief: memory.brief, guide: HowTo.wanted(said))
         // Riffs think on the deep model.
         let riff = riffing
         let role: ModelRole = deep || riff ? .deep : .everyday
@@ -301,6 +303,9 @@ final class PhoneHome: ObservableObject {
         case .saveThat: suggestSave(force: true)
         case .remember(let fact):
             guard !isPrivate else { return problem = "Private conversations keep nothing, so that isn't remembered." }
+            guard !store.config.memoryPaused else {
+                return problem = "Memory is paused on your Mac, so that isn't remembered. Turn it back on in the Mac's Settings › General."
+            }
             do {
                 try Memory.remember(fact, root: store.root, device: "iphone")
                 add(Turn(device: "iphone", speaker: .note, text: "Remembered: \(fact)", project: project))
@@ -318,6 +323,8 @@ final class PhoneHome: ObservableObject {
             add(Turn(device: "iphone", speaker: .topic, text: name, project: name))
         case .connect:
             problem = "Folders are connected from the Mac: say it in the conversation there."
+        case .setUpBrief:
+            problem = "Briefs are set up from the Mac for now: say it in the conversation there."
         case .openVault:
             openVault(nil)
         case .toVault(let secret):

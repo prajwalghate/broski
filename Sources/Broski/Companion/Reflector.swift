@@ -41,7 +41,8 @@ final class Reflector {
     }
 
     private func check() async {
-        guard config().reflection, !running else { return }
+        // Paused memory learns nothing new either.
+        guard config().reflection, !config().memoryPaused, !running else { return }
         let pending = Reflection.newTurns(root: root, hidden: hidden, keep: keep).count
         guard Reflection.due(lastRun: Reflection.loadState(root: root).lastRun, newTurns: pending, idleSeconds: idleSeconds) else { return }
         _ = await run()
@@ -50,6 +51,7 @@ final class Reflector {
     /// One run now. Returns a line for the person: what changed, or why nothing did.
     func run() async -> String {
         guard !running else { return "Already reflecting." }
+        guard !config().memoryPaused else { return "" }
         guard let gateway = gateway() else { return "" }
         running = true
         defer { running = false }

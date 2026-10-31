@@ -221,6 +221,62 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
         Screenshot.relaunchBroski()
     }
 
+    // MARK: Start fresh
+
+    /// Forgets what Broski knows about you (Settings › General › Start fresh). Returns a line to show there.
+    func forgetAboutMe() -> String {
+        do {
+            let count = try StartFresh.forgetMe(root: root, device: "mac")
+            Log.info("Forgot what Broski knew about the person (\(count) things)")
+            return count == 0 ? "Broski didn't know anything about you." : "Forgot \(count) thing\(count == 1 ? "" : "s"). The record is in What Broski knows."
+        } catch {
+            return "Couldn't forget: \(error.localizedDescription)"
+        }
+    }
+
+    /// The archived Broski folders next to this one, newest first.
+    var archivedFolders: [URL] { StartFresh.archives(of: root) }
+
+    /// Moves the whole Broski folder aside and restarts Broski in an empty one. Model keys go only when asked.
+    func startCompletelyFresh(forgetKeys: Bool, keptDraft: Bool = false) {
+        if capture.isCapturing, !keptDraft {
+            Task { await capture.keepDraftForQuit(); startCompletelyFresh(forgetKeys: forgetKeys, keptDraft: true) }
+            return
+        }
+        capture.engine.stop()
+        do {
+            let archive = try StartFresh.everything(root: root, config: config)
+            if forgetKeys { Secrets.forgetModelKeys() }
+            UserDefaults.standard.removeObject(forKey: HomeModel.draftKey)
+            UserDefaults.standard.removeObject(forKey: HomeModel.dismissedBriefKey)
+            Log.fileURL = root.appendingPathComponent(".broski/broski.log")
+            Log.info("Started fresh; the old folder is \(archive.lastPathComponent)")
+            Screenshot.relaunchBroski()
+        } catch {
+            if !capture.isCapturing { capture.engine.resumeIdle() }
+            configWarning = "Couldn't start fresh: \(error.localizedDescription)"
+        }
+    }
+
+    /// Puts an archived folder back; the one in use is archived first. Broski restarts.
+    func restoreFolder(_ archive: URL, keptDraft: Bool = false) {
+        // An open note is kept as a draft first, so it's in the folder that gets archived, not lost.
+        if capture.isCapturing, !keptDraft {
+            Task { await capture.keepDraftForQuit(); restoreFolder(archive, keptDraft: true) }
+            return
+        }
+        capture.engine.stop()
+        do {
+            let replaced = try StartFresh.restore(archive, root: root)
+            Log.fileURL = root.appendingPathComponent(".broski/broski.log")
+            Log.info("Put back \(archive.lastPathComponent); the folder it replaced is \(replaced?.lastPathComponent ?? "none")")
+            Screenshot.relaunchBroski()
+        } catch {
+            if !capture.isCapturing { capture.engine.resumeIdle() }
+            configWarning = "Couldn't put it back: \(error.localizedDescription)"
+        }
+    }
+
     init(root: URL) {
         self.root = root
         configURL = root.appendingPathComponent("config.json")
@@ -526,7 +582,12 @@ final class AppModel: NSObject, ObservableObject, NSWindowDelegate {
 
     private(set) lazy var memoryModel: MemoryModel = {
         let model = MemoryModel(root: root, library: library)
-        model.reflect = { [weak self] in await self?.reflector.run() ?? "" }
+        model.reflect = { [weak self] in
+            guard self?.config.memoryPaused != true else {
+                return "Memory is paused, so Broski isn't learning. Turn it back on in Settings › General › Start fresh."
+            }
+            return await self?.reflector.run() ?? ""
+        }
         model.reflectionOn = ({ [weak self] in self?.config.reflection ?? true }, { [weak self] on in self?.update { $0.reflection = on } })
         return model
     }()

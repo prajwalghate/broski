@@ -42,7 +42,7 @@ public final class ItemStore {
     public func items(in project: String?) -> [Item] {
         let dir = folder(for: project)
         let files = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
-            .filter { $0.pathExtension == "md" && $0.lastPathComponent != ProjectPage.fileName }
+            .filter { $0.pathExtension == "md" && $0.lastPathComponent != ProjectPage.fileName && $0.lastPathComponent != ProjectBrief.fileName }
         return files.compactMap { Self.read($0, project: project) }.sorted { $0.created > $1.created }
     }
 

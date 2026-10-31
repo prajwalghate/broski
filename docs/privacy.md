@@ -16,7 +16,7 @@ Broski holds your thinking, so it's built to keep it yours: your notes are plain
 Every call to a model goes through Broski's model gateway (`ModelGateway` in `Sources/BroskiCore`). No feature talks to a provider directly. For a reply in the conversation, the model gets:
 
 - Broski's instructions.
-- What it knows about you, the project's living page and the project's standing decisions, each fenced as data.
+- What it knows about you, the project's living page, its brief and its standing decisions, each fenced as data (none of them in private mode; no memory while it's paused).
 - The recent turns of the conversation that fit, and the notes and older turns it recalled for this reply, numbered so it can cite them.
 - Files you shared with this message: images and PDFs as they are (for a model that reads them), text files fenced as data.
 - The text of a link you shared, fenced as data.
@@ -53,6 +53,14 @@ Mark a project local only (Settings › Companion › Living pages and privacy) 
 Say "go private" for a blank slate. In private mode Broski doesn't read what it knows about you, your projects, decisions or notes, and recalls nothing. The conversation is kept in memory only: nothing from it is written to disk unless you ask (saying "note: …" still saves that note), files you share aren't copied, "remember that …" is refused, and a save card comes only when you say "save that": it's drawn from the private conversation alone, and nothing is saved unless you tap Save. When you leave, you choose to keep it (it's added to the conversation and its files are copied into the project's resources) or let it go.
 
 Private mode is about what Broski keeps and reads, not where the reply comes from: your messages still go to your everyday model (or the deep one after "think harder"), and "save that" to your fast one. If that's a cloud model, what you say in private mode goes to it, without the rest of your context. For text that must stay on your device, use a local model or a local-only project.
+
+## Starting fresh
+
+Settings › General › **Start fresh** has three separate levels. Each says what it clears and what it keeps, and none deletes anything.
+
+- **Pause memory.** Replies stop using what Broski knows about you and what you said in earlier conversations, reflection stops learning, and Claude Code's memory and conversation search say memory is paused. Everything stays in your folder for when you turn it back on. Notes, project pages, briefs and decisions are still used.
+- **Forget what Broski knows about me.** Every remembered fact is forgotten (on every device, written into this device's own file, so each forget shows in What Broski knows), and the About you page moves to `memory/forgotten/`. Conversations, notes and projects stay.
+- **Start completely fresh.** The whole Broski folder moves aside as "Broski (archived <date>)" next to it, and Broski restarts in an empty one with the first conversation again. Which model does each job, your shortcuts and voice settings, and which projects are local only come along. Your model keys stay on this Mac unless you tick "also forget my model keys". An archived folder can be put back from the same place; the folder in use is archived first, so nothing is lost either way. The iPhone keeps following the folder it opened, so choose the Broski folder again there afterwards (Settings › Use my Mac's Broski folder); until you do, it says it's on an archived folder.
 
 ## Links you share
 
@@ -113,6 +121,10 @@ Claude Code and other MCP clients run Broski on your Mac; nothing goes over the 
 Found a way to make Broski leak, act without asking, or read what it shouldn't? Report it privately: see [SECURITY.md](../SECURITY.md). The checklist for outside reviews is [SECURITY-REVIEW.md](SECURITY-REVIEW.md).
 
 ## Common questions
+
+### How do I reset Broski?
+
+Settings › General › Start fresh. Pause memory keeps everything but stops using it; Forget what Broski knows about me clears its memory of you; Start completely fresh moves the whole folder aside and begins again. Nothing is deleted, and an archived folder can be put back.
 
 ### Does Broski collect analytics or crash reports?
 
