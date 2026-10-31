@@ -15,6 +15,8 @@ struct ComposerField: NSViewRepresentable {
     /// Pasted or dropped files and images; nil pastes their names as text.
     var onFiles: (([URL]) -> Void)?
     var onEscape: () -> Void
+    /// Changing it puts the cursor back in the box (after ⌘K closes, say).
+    var focus = 0
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -54,6 +56,14 @@ struct ComposerField: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = context.coordinator.textView else { return }
+        if context.coordinator.focus != focus {
+            context.coordinator.focus = focus
+            DispatchQueue.main.async { [weak textView] in
+                guard let textView, let window = textView.window else { return }
+                window.makeFirstResponder(textView)
+                textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+            }
+        }
         textView.placeholder = placeholder
         textView.setAccessibilityPlaceholderValue(placeholder)
         textView.onSend = onSend
@@ -77,6 +87,7 @@ struct ComposerField: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerField
         weak var textView: ComposerTextView?
+        var focus = 0
         /// The box's own undo history, so text set from outside (Send clears it) can't be "undone" into a mess.
         private let undo = UndoManager()
 

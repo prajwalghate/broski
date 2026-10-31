@@ -182,7 +182,9 @@ enum Snapshots {
             let seeded: [Turn] = [
                 Turn(at: start, device: "mac", speaker: .topic, text: "trailmix", project: "trailmix"),
                 Turn(at: start.addingTimeInterval(5), device: "mac", speaker: .you, text: "Should I run a week of paper trading before real money, or just start small?", project: "trailmix"),
-                Turn(at: start.addingTimeInterval(20), device: "mac", speaker: .broski, text: "Your notes say the stop-loss guard is still open, so I'd do the paper week, with a pass bar set before it starts. What would make you trust it?", project: "trailmix", model: "claude-sonnet-5-5"),
+                Turn(at: start.addingTimeInterval(20), device: "mac", speaker: .broski, text: "Your notes say the stop-loss guard is still open, so I'd do the paper week, with a pass bar set before it starts. What would make you trust it?", project: "trailmix", model: "claude-sonnet-5-5",
+                     used: ReplyContext(aboutYou: true, page: "trailmix", decisions: 1,
+                                        recalled: ["Todo · Oct 21 · Write the stop-loss guard", "You said · Oct 20"])),
                 Turn(at: start.addingTimeInterval(60), device: "iphone", speaker: .you, text: "Paper week first. Pass bar: fills within 0.2% of the quote. The guard lands before that.", project: "trailmix"),
                 Turn(at: start.addingTimeInterval(80), device: "mac", speaker: .note, text: "Noted in trailmix: Replay the March crash day", project: "trailmix"),
             ]
@@ -196,6 +198,10 @@ enum Snapshots {
         ])
         render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home")
         home.card = nil
+        // ⌘K: every command, found by typing.
+        home.showingPalette = true
+        render(HomeView(model: home, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home-palette")
+        home.showingPalette = false
         home.proposal = ProjectProposal(name: "Set Log", summary: "Log gym sets by voice on the iPhone.", packs: ["mobile", "ai"],
                                         goals: ["Parse “bench, 60 kilos, 8 reps” offline", "Log a whole workout hands-free"],
                                         questions: ["Kilos only, or pounds too?"])
@@ -222,6 +228,15 @@ enum Snapshots {
         }
         render(HomeView(model: newcomer, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 700), to: folder, "home-first-run")
         try? FileManager.default.removeItem(at: fresh)
+        // Someone set up, with nothing said yet: Broski's greeting for the time of day (a fixed morning here).
+        let quiet = FileManager.default.temporaryDirectory.appendingPathComponent("broski-snapshot-empty-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: quiet, withIntermediateDirectories: true)
+        try? Memory.remember("Prefers short, direct answers", root: quiet, device: "mac")
+        let empty = HomeModel(root: quiet, library: app.library, voice: app.voice) { BroskiConfig.defaults }
+        empty.now = { Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: Date()) ?? Date() }
+        empty.reload()
+        render(HomeView(model: empty, voice: app.voice, openDashboard: {}, openMemory: {}), size: NSSize(width: 560, height: 520), to: folder, "home-empty")
+        try? FileManager.default.removeItem(at: quiet)
 
         // Riff mode: the banner with your rules, a riff in progress, and the riff chips.
         let riffRoot = FileManager.default.temporaryDirectory.appendingPathComponent("broski-snapshot-riff-\(UUID().uuidString)")

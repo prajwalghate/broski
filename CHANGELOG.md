@@ -2,6 +2,17 @@
 
 All notable changes to Broski are in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Mac app and the iPhone app have their own version numbers; each entry names the ones that changed. The iPhone stayed at 0.6.0 while Mac 0.9.1 to 0.9.6 shipped, so iPhone changes in those releases are listed under the Mac version.
 
+## Unreleased
+
+### Added
+
+- Under each reply, a folded line says what Broski was given to work from: what it knows about you, the project's page, its decisions and what it recalled. Click it for the list. Private replies show none.
+- ⌘K in the conversation: find any command by typing (riff, private, think harder, switch project, the dashboard, the vault, Settings).
+- A saved card says when it was saved, and **Show** opens the saved note in Finder. If saving fails, the card stays so you can try again.
+- Each project has a colour, shown as a dot by its name in the conversation and the dashboard, the same on every device.
+- An empty conversation greets you with Broski's face and a line for the time of day, and the "Thinking…" line varies.
+- A "Local only" label by the project menu when the project uses only models on your Mac.
+
 ## Mac 0.11.3, iPhone 0.7.2 - 2026-10-28
 
 The first public release. Broski is a companion you talk to about your projects: press ⌥⇧B, talk or type, and it remembers what you've told it, thinks with you, and saves decisions and todos only when you tap Save. It works with the AI you choose (Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, a model on your Mac, or Apple's on-device model), and your notes are plain files you own. It needs macOS 14 or later on Apple silicon. See the README for what it does and [Getting started](docs/getting-started.md) for the first run; the entries below say what changed in each version.

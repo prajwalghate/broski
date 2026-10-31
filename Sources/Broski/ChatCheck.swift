@@ -154,6 +154,20 @@ enum ChatCheck {
         settle()
         check(fromBottom(chat) > 300, "staying scrolled up stays put (\(distance()))")
         home.draft = ""
+
+        // ⌘K: the shortcut opens the palette with its field ready, Return runs the first command (New note), and the
+        // palette closes.
+        home.draft = "milk"
+        window.makeKey()
+        _ = window.performKeyEquivalent(with: key(40, "k", [.command]))
+        check(settle(until: { home.showingPalette }), "⌘K opens the command palette")
+        let field = { window.firstResponder as? NSTextView }
+        check(settle(until: { field()?.isFieldEditor == true }), "the palette opens ready to type")
+        field()?.insertNewline(nil)
+        check(settle(until: { !home.showingPalette }) && home.draft == "note: milk",
+              "Return runs the first command and closes the palette (draft: \(home.draft))")
+        check(settle(until: { window.firstResponder is ComposerTextView }), "the cursor is back in the message box after ⌘K")
+        home.draft = ""
     }
 
     // MARK: Helpers

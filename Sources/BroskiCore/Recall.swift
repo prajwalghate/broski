@@ -122,7 +122,12 @@ public enum DecisionLog {
     }
 
     public static func record(_ decision: Decision, root: URL) throws {
-        try JSONLines.append(decision, to: folder(root: root, project: decision.project).appendingPathComponent("decisions.\(decision.device).jsonl"))
+        try JSONLines.append(decision, to: file(root: root, project: decision.project, device: decision.device))
+    }
+
+    /// One device's decision log for a project.
+    static func file(root: URL, project: String?, device: String) -> URL {
+        folder(root: root, project: project).appendingPathComponent("decisions.\(device).jsonl")
     }
 
     /// Every device's decisions for a project, oldest first.

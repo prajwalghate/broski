@@ -62,7 +62,7 @@ struct DashboardView: View {
             Section("Projects") {
                 ForEach(library.projects.filter { $0.entry?.kind != .personal }) { project in
                     SidebarRow(title: project.displayName, symbol: project.hasTracker ? "lock.doc.fill" : (project.folder == nil ? "folder" : "folder.fill"),
-                               total: project.items.count, open: project.openCount)
+                               total: project.items.count, open: project.openCount, color: Brand.color(for: project.name))
                         .tag(project.id)
                 }
             }
@@ -110,10 +110,19 @@ private struct SidebarRow: View {
     let symbol: String
     let total: Int
     let open: Int
+    /// The project's colour, as a dot after its name (the same as in the conversation).
+    var color: Color?
 
     var body: some View {
         HStack {
-            Label(title, systemImage: symbol).lineLimit(1)
+            Label {
+                HStack(spacing: 6) {
+                    if let color { Circle().fill(color).frame(width: 6, height: 6).accessibilityHidden(true) }
+                    Text(title).lineLimit(1)
+                }
+            } icon: {
+                Image(systemName: symbol)
+            }
             Spacer()
             if open > 0 {
                 Text("\(open)")

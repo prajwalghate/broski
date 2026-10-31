@@ -24,6 +24,11 @@ final class HomeModel: ObservableObject {
     @Published var askKeep = false
     /// Replies come from the deep model.
     @Published var deep = false
+    /// ⌘K is open. Closing it puts the cursor back in the message box.
+    @Published var showingPalette = false {
+        didSet { if oldValue && !showingPalette { composerFocus += 1 } }
+    }
+    @Published private(set) var composerFocus = 0
     @Published var project: String?
     /// What's being discussed now ("launch plan"), from the review after each reply; stored on each turn.
     @Published private(set) var topic: String?
@@ -52,6 +57,8 @@ final class HomeModel: ObservableObject {
     var firstRunDone: () async -> String = { "" }
     /// Opens the private vault, with a note to add once it's open.
     var openVault: (String?) -> Void = { _ in }
+    /// The clock, for the greeting; the snapshots set a fixed one.
+    var now: () -> Date = Date.init
     private let root: URL
     private let config: () -> BroskiConfig
     let speaker = ReplySpeaker()
@@ -282,6 +289,35 @@ final class HomeModel: ObservableObject {
         NSWorkspace.shared.open(path.hasPrefix("/") ? URL(fileURLWithPath: path) : root.appendingPathComponent(path))
     }
 
+    /// Shows a saved file in Finder, selected.
+    func reveal(file path: String) {
+        NSWorkspace.shared.activateFileViewerSelecting([path.hasPrefix("/") ? URL(fileURLWithPath: path) : root.appendingPathComponent(path)])
+    }
+
+    /// The project you're on uses only models on this Mac.
+    var projectIsLocalOnly: Bool { project.map(localOnlyProjects.contains) ?? false }
+
+    /// What ⌘K offers now.
+    var paletteState: Palette.State {
+        Palette.State(projects: library.projectNames, current: project, isPrivate: isPrivate, riffing: riffing, deep: deep)
+    }
+
+    /// Does what you picked in ⌘K. The dashboard and memory open from the view, which owns those windows.
+    func perform(_ action: PaletteItem.Action) {
+        switch action {
+        case .note: if !draft.lowercased().hasPrefix("note:") { draft = "note: " + draft }
+        case .saveThat: suggestSave(force: true)
+        case .toggleDeep: deep.toggle()
+        case .startRiff: startRiff(about: nil)
+        case .wrapUp: endRiff()
+        case .togglePrivate: togglePrivate()
+        case .project(let name): project = name
+        case .vault: openVault(nil)
+        case .settings(let page): openSettings(page == "voice" ? .voice : page == "general" ? .general : .models)
+        case .dashboard, .memory: break
+        }
+    }
+
     func openProjectFolder() {
         guard let project else { return }
         let folder = root.appendingPathComponent("projects/\(project)", isDirectory: true)
@@ -345,8 +381,13 @@ final class HomeModel: ObservableObject {
         let recall = isPrivate ? [] : Recall.find(said, index: recallSearch(), excluding: Set(history.map { "turn:\($0.id)" }),
                                                    hidden: localOnly ? [] : localOnlyProjects)
         let decisions = isPrivate ? [] : project.map { DecisionLog.current(root: root, project: $0) } ?? []
-        let request = ConversationContext.build(aboutYou: isPrivate ? nil : Memory.aboutYou(root: root),
-                                                page: isPrivate ? nil : project.flatMap { library.pages[$0] },
+        let aboutYou = isPrivate ? nil : Memory.aboutYou(root: root)
+        let page = isPrivate ? nil : project.flatMap { library.pages[$0] }
+        // What it was given, kept with the reply and shown folded under it.
+        let used = ConversationContext.used(aboutYou: aboutYou, page: page, project: project, decisions: decisions,
+                                            recall: recall, isPrivate: isPrivate)
+        let request = ConversationContext.build(aboutYou: aboutYou,
+                                                page: page,
                                                 project: isPrivate ? nil : project, turns: history, isPrivate: isPrivate,
                                                 decisions: decisions, recall: recall, attachments: attachments,
                                                 firstRun: !isPrivate && FirstRun.active(turns: history),
@@ -373,7 +414,7 @@ final class HomeModel: ObservableObject {
                 if route.overBudget { sources.append("Past today's limit: \(route.model)") }
                 if route.substituted { sources.append("On this Mac: \(route.model)") }
                 add(Turn(device: "mac", speaker: .broski, text: text, project: project, topic: topic, model: route.model,
-                         sources: sources.isEmpty ? nil : sources, mode: riff ? "riff" : nil))
+                         sources: sources.isEmpty ? nil : sources, mode: riff ? "riff" : nil, used: used))
                 if speak { speaker.say(text) }
                 // No save cards while you riff: the wrap-up offers one at the end.
                 if !wasPrivate, !riff { suggestSave(force: false) }
@@ -553,13 +594,14 @@ final class HomeModel: ObservableObject {
         guard let card else { return }
         do {
             // A private conversation isn't kept, so there's no turn to link back to.
-            let saved = try SaveCard.save(card, store: library.store, root: root, device: "mac",
+            let saved = try SaveCard.keep(card, store: library.store, root: root, device: "mac",
                                           turn: isPrivate ? nil : turns.last(where: { $0.speaker == .you })?.id)
             library.reload()
-            add(Turn(device: "mac", speaker: .note, text: saved, project: card.project))
+            add(Turn(device: "mac", speaker: .note, text: saved.line, files: saved.files.isEmpty ? nil : saved.files,
+                     project: card.project))
             self.card = nil
         } catch {
-            problem = "Couldn't save: \(error.localizedDescription)"
+            problem = "Couldn't save: \(error.localizedDescription). The card is still here, so you can try again."
             library.reload()
         }
     }
@@ -730,6 +772,8 @@ struct HomeView: View {
     @State private var anchor = ConversationAnchor()
     @State private var showingRules = false
     @State private var newRule = ""
+    /// Replies whose "Used …" line is open.
+    @State private var openedUsed: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -761,6 +805,27 @@ struct HomeView: View {
             voice.refreshMic()
         }
         .onExitCommand { model.escape() }
+        .overlay(alignment: .top) {
+            if model.showingPalette {
+                ZStack(alignment: .top) {
+                    Color.black.opacity(0.12).onTapGesture { model.showingPalette = false }
+                    CommandPalette(items: Palette.items(model.paletteState), pick: { item in
+                        model.showingPalette = false
+                        switch item.action {
+                        case .dashboard: openDashboard()
+                        case .memory: openMemory()
+                        default: model.perform(item.action)
+                        }
+                    }, close: { model.showingPalette = false })
+                    .padding(.top, 56)
+                }
+            }
+        }
+        .background {
+            Button("Commands") { model.showingPalette.toggle() }
+                .keyboardShortcut("k", modifiers: .command)
+                .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+        }
     }
 
     private var header: some View {
@@ -943,11 +1008,19 @@ struct HomeView: View {
                 // Not lazy: rows of text measured as they scroll into view make the scroll bar and position jump.
                 VStack(alignment: .leading, spacing: 14) {
                     if model.visibleTurns.isEmpty {
-                        Text(model.isPrivate
-                             ? "A blank slate. Nothing you say here is kept unless you choose to keep it."
-                             : "Talk to Broski about anything: a project, an idea, a decision. It remembers, and saves notes only when you say so. Type, click the mic, or hold fn.")
-                            .font(.system(size: 13)).foregroundStyle(.secondary)
-                            .padding(.top, 30)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Image(nsImage: BroskiArt.avatar(diameter: 56, crowned: !model.isPrivate))
+                                .frame(width: 56, height: 56).accessibilityHidden(true)
+                            Text(model.isPrivate ? "Private. What's on your mind?"
+                                 : BroskiLines.greeting(hour: Calendar.current.component(.hour, from: model.now())))
+                                .font(.system(size: 17, weight: .semibold))
+                            Text(model.isPrivate
+                                 ? "A blank slate. Nothing you say here is kept unless you choose to keep it."
+                                 : "Talk to Broski about anything: a project, an idea, a decision. It remembers, and saves notes only when you say so. Type, click the mic, or hold fn.")
+                                .font(.system(size: 13)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, 24)
                     }
                     ForEach(model.visibleTurns) { turn in
                         row(turn).id(turn.id)
@@ -956,7 +1029,8 @@ struct HomeView: View {
                     if model.thinking {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
-                            Text(model.reading ?? (model.deep ? "Thinking harder…" : "Thinking…")).foregroundStyle(.secondary)
+                            Text(model.reading ?? BroskiLines.thinking(replies: model.sentCount, deep: model.deep || model.riffing))
+                                .foregroundStyle(.secondary)
                         }
                         .font(.system(size: 12)).id("thinking")
                     }
@@ -1072,6 +1146,7 @@ struct HomeView: View {
         case .topic:
             HStack(spacing: 8) {
                 Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
+                if let project = turn.project { ProjectDot(project: project) }
                 Text(turn.text).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize()
                 Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
             }
@@ -1080,10 +1155,18 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 Label(turn.text, systemImage: failed ? "exclamationmark.triangle" : "checkmark")
                     .font(.system(size: 12)).foregroundStyle(failed ? Color.orange : Color.green)
+                Text(turn.at.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
                 if let file = turn.files?.first {
-                    Button("Open copy") { model.open(file: file) }
-                        .buttonStyle(.borderless).font(.system(size: 11))
-                        .help("The copy Broski kept in the project's resources")
+                    if file.contains("/resources/") {
+                        Button("Open copy") { model.open(file: file) }
+                            .buttonStyle(.borderless).font(.system(size: 11))
+                            .help("The copy Broski kept in the project's resources")
+                    } else {
+                        Button("Show") { model.reveal(file: file) }
+                            .buttonStyle(.borderless).font(.system(size: 11))
+                            .help("Show the saved file in Finder: \(file)")
+                    }
                 }
             }
             .padding(.leading, 34)
@@ -1130,8 +1213,37 @@ struct HomeView: View {
                             }
                         }
                     }
+                    if let used = turn.used { usedLine(used, turn: turn.id) }
                 }
                 Spacer(minLength: 40)
+            }
+        }
+    }
+
+    /// What the reply was given, folded to one line; a click lists each thing.
+    private func usedLine(_ used: ReplyContext, turn: String) -> some View {
+        let open = openedUsed.contains(turn)
+        return VStack(alignment: .leading, spacing: 4) {
+            Button {
+                if open { openedUsed.remove(turn) } else { openedUsed.insert(turn) }
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .bold))
+                    Text(used.summary).lineLimit(open ? nil : 1).multilineTextAlignment(.leading)
+                }
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(open ? "Hide what this reply used" : "What this reply was given to work from")
+            .accessibilityLabel(used.summary)
+            .accessibilityHint(open ? "Hides the list" : "Lists each thing")
+            if open {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(used.lines, id: \.self) { line in
+                        Text("· " + line).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                }
+                .padding(.leading, 12)
             }
         }
     }
@@ -1221,7 +1333,7 @@ struct HomeView: View {
                         .help(move.ask)
                     }
                 } else {
-                chip("Save that") { model.suggestSave(force: true) }
+                if !model.visibleTurns.isEmpty { chip("Save that") { model.suggestSave(force: true) } }
                 chip(model.deep ? "Back to everyday" : "Think harder") { model.deep.toggle() }
                 chip("Riff") { model.startRiff(about: nil) }
                 }
@@ -1271,7 +1383,7 @@ struct HomeView: View {
                 ComposerField(text: $model.draft,
                               placeholder: model.riffing ? "Riff: say what's on your mind, or “rule: …”" : "Talk to Broski, or type “note: …”",
                               onSend: { model.send() }, onRecall: { model.lastSaid() },
-                              onFiles: { model.attach($0) }, onEscape: { model.escape() })
+                              onFiles: { model.attach($0) }, onEscape: { model.escape() }, focus: model.composerFocus)
                 if voice.transcribing { ProgressView().controlSize(.small) }
                 Button("Note") { model.quickNote() }
                     .buttonStyle(.borderless).foregroundStyle(Brand.purple)
@@ -1312,6 +1424,15 @@ struct HomeView: View {
                 }
                 .menuStyle(.borderlessButton).fixedSize()
                 .help("The project this conversation is about")
+                .overlay(alignment: .leading) {
+                    if let project = model.project, !model.isPrivate { ProjectDot(project: project).offset(x: -10).allowsHitTesting(false) }
+                }
+                .padding(.leading, model.project == nil || model.isPrivate ? 0 : 10)
+                if model.projectIsLocalOnly && !model.isPrivate {
+                    Label("Local only", systemImage: "laptopcomputer")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .help("\(model.project ?? "This project") uses only models on this Mac")
+                }
                 if !model.threads.isEmpty && !model.isPrivate {
                     Menu {
                         Button("The whole conversation") { model.show(thread: nil) }
@@ -1326,9 +1447,9 @@ struct HomeView: View {
                     .help("Show one thread of the conversation")
                 }
                 if model.visibleTurns.count < 4 {
-                    Text("Return sends · Shift-Return new line · Esc stops · hold fn to talk")
+                    Text("Return sends · Shift-Return new line · Esc stops · ⌘K commands")
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                        .help("“note: …” saves without a reply · Up brings back your last message · paste or drop files and images")
+                        .help("Hold fn to talk · “note: …” saves without a reply · Up brings back your last message · paste or drop files and images")
                 }
             }
         }

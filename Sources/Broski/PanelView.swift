@@ -741,6 +741,24 @@ struct Thumbnail: View {
 enum Brand {
     static let purple = Color(nsColor: BroskiArt.Palette.purple)
     static let yellow = Color(nsColor: BroskiArt.Palette.yellow)
+
+    /// Each project's colour (ProjectColor picks the index): system colours that read on both themes and never stand
+    /// for something else here (no purple: selection; green: done; orange: needs you; red: errors).
+    static let projects: [Color] = [.blue, .teal, .indigo, .pink, .brown, .gray]
+
+    static func color(for project: String) -> Color {
+        projects[ProjectColor.index(for: project) % projects.count]
+    }
+}
+
+/// A project's colour as a small dot, next to its name. The name always shows too: colour is never the only cue.
+struct ProjectDot: View {
+    var project: String
+    var size: CGFloat = 7
+
+    var body: some View {
+        Circle().fill(Brand.color(for: project)).frame(width: size, height: size).accessibilityHidden(true)
+    }
 }
 
 extension NoteKind {

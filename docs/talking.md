@@ -7,10 +7,13 @@ There are two ways in. **The conversation** (⌥⇧B, or hold fn) is where you t
 Press ⌥⇧B on the Mac, or open the Talk tab on the iPhone. It's one conversation on both, kept as plain files (`conversations/<month>/<day>.<device>.jsonl`).
 
 - **It remembers.** Broski recalls your notes, older conversation and each project's standing decisions, and says where a fact came from ("on Oct 21 you decided…"). A newer decision replaces an older one instead of mixing with it.
-- **It offers, you decide.** When you decide something or name a todo or a bug, a **save card** appears. Nothing is saved until you tap Save; **Not now** dismisses it.
+- **It shows what it used.** Under a reply, a folded line says what Broski was given to work from: "Used what I know about you, the recipe-box page, 2 decisions and 3 from earlier". Click it for the list. A private reply shows none, because it reads none of these.
+- **It offers, you decide.** When you decide something or name a todo or a bug, a **save card** appears. Nothing is saved until you tap Save; **Not now** dismisses it. After you save, the conversation says where it went and when, and **Show** opens the saved note in Finder.
 - **Share anything.** Paste or drop screenshots, photos, PDFs and other files anywhere in the window, or take a screenshot with the camera button. They're kept in the project's `resources/` folder and sent with your message.
 - **Links are read.** Paste a link and Broski opens the page on your device before it replies (pages drawn by JavaScript in a hidden browser that keeps no cookies), keeps a copy in the project's resources, and sends its text with your message, fenced as data. An average page costs about half a cent on Sonnet. Pages behind a login can't be read. Settings › Models › Links turns it off.
 - **Threads.** Broski names the topic of each turn; the thread menu shows one topic at a time, and replies then focus on it.
+- **⌘K for everything.** Type a few letters to start a riff, go private, think harder, switch project, or open the dashboard, the vault or Settings. Arrows move, Return does it, Esc closes.
+- **Each project has a colour.** A small dot next to the project's name, the same in the conversation and the dashboard, on every device. The name is always there too.
 - **Return sends.** Shift-, Option- or Control-Return adds a line. Up in an empty box brings back your last message. Esc stops listening, then stops a reply, then stops reading aloud. The Send button turns into Stop while Broski replies, and a failed reply gets **Try again**.
 
 ### Things you can say
