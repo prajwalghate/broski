@@ -2,7 +2,7 @@
 
 All notable changes to Broski are in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Mac app and the iPhone app have their own version numbers; each entry names the ones that changed. The iPhone stayed at 0.6.0 while Mac 0.9.1 to 0.9.6 shipped, so iPhone changes in those releases are listed under the Mac version.
 
-## Unreleased
+## Mac 0.12.0, iPhone 0.7.3 - 2026-10-31
 
 ### Added
 
@@ -12,6 +12,14 @@ All notable changes to Broski are in this file. The format follows [Keep a Chang
 - Each project has a colour, shown as a dot by its name in the conversation and the dashboard, the same on every device.
 - An empty conversation greets you with Broski's face and a line for the time of day, and the "Thinking…" line varies.
 - A "Local only" label by the project menu when the project uses only models on your Mac.
+
+### Fixed
+
+- On a slow Mac, the conversation keeps following a reply as it arrives instead of stopping short of the end.
+
+### iPhone
+
+- Built on this release's shared core; nothing changes on the iPhone's screens.
 
 ## Mac 0.11.3, iPhone 0.7.2 - 2026-10-28
 
