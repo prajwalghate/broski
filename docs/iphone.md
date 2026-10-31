@@ -96,3 +96,17 @@ Apple's recognizer shows the words as you talk. For better English notes, downlo
 ## The private vault on the iPhone
 
 Talk › ⋯ › **Private vault**. It locks when Broski leaves the screen, hides its contents in the app switcher, and can open with Face ID after the first unlock. [Privacy](privacy.md) explains how it's encrypted.
+
+## Common questions
+
+### Do I need a paid Apple developer account for the iPhone app?
+
+No. A free Apple ID works, but an app signed with one stops opening after 7 days; run `scripts/phone.sh` again to renew it, and the app's data stays.
+
+### How do I sync Broski between my Mac and iPhone?
+
+On the Mac, turn on Settings › General › **Sync with iPhone**, which moves your Broski folder into iCloud Drive. On the iPhone, choose Settings › **Use my Mac's Broski folder** and pick iCloud Drive › Broski itself, not a folder inside it.
+
+### Can the iPhone app use Ollama or LM Studio on my Mac?
+
+No. A model on your Mac sits at an address only the Mac can reach. Apple's on-device model runs on the iPhone itself, with iOS 26 and Apple Intelligence on.

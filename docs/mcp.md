@@ -72,3 +72,17 @@ Every tool is marked read-only for the client except the two that write, which a
 - Capabilities: tools only.
 
 [Trackers](trackers.md) explains how trackers are read, and [Privacy](privacy.md) what never leaves your device.
+
+## Common questions
+
+### Can Claude Code change or delete my notes through Broski?
+
+No. The MCP server is read-only, except that `tracker_add` and `tracker_set_status` can add or update items in a tracker Broski keeps. It never deletes or overwrites anything, and never writes to a project's own tracker.
+
+### How do I connect Broski to Claude Desktop?
+
+In Broski, Settings › Connections › **Copy config** copies the server entry. Paste it under `mcpServers` in `claude_desktop_config.json`.
+
+### Why does Claude Code say it can't read Broski's notes?
+
+macOS is stopping the app that runs Claude Code from reading your Broski folder. Allow it in System Settings › Privacy & Security › Files and Folders.

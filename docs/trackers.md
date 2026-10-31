@@ -121,3 +121,17 @@ projects/<p>/stream.<device>.jsonl  what changed in the project's trackers, read
 projects/<p>/onboarding/<run>/      a run's questions, prompts, the threads' answers and CHECK.md
 packs/<id>.json                     your own packs
 ```
+
+## Common questions
+
+### Does Broski write to my project's repository or tracker?
+
+No. It reads each project's own tracker where it lives and never writes into a repository or runs its code. The only trackers it writes to are the ones it keeps itself, for projects that have none.
+
+### Can Broski read my project's .env files?
+
+No. Broski never reads `.env*`, `*.db`, `*.sqlite`, `*.pem`, `*.key`, `*.p12` or `secrets.json`, whatever a manifest says.
+
+### What if my project doesn't have a tracker?
+
+Use **Create a Broski tracker** (Tracker › Onboard). You get plain markdown files in your Broski folder, in the project's own folder under `projects/`, which you, your Claude Code sessions and Broski can all edit.

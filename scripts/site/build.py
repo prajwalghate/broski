@@ -18,6 +18,7 @@ import argparse
 import datetime
 import html as htmllib
 import json
+import math
 import os
 import plistlib
 import re
@@ -25,6 +26,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from itertools import dropwhile
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -37,46 +39,94 @@ class Doc:
     file: str  # in docs/
     group: str
     description: str  # what search results and llms.txt show: under 160 characters, true to the guide
+    related: Tuple[str, ...] = ()  # the pages "Keep reading" suggests, by slug
 
 
 # Every guide in docs/, in the order the site lists them. A guide missing here fails the build.
 DOCS = [
     Doc("getting-started.md", "Use Broski",
         "Install Broski on a Mac and get through the first run: permissions, voice models, where your files live, "
-        "and how to update or uninstall it."),
+        "and how to update or uninstall it.",
+        related=("talking", "models")),
     Doc("talking.md", "Use Broski",
         "How to talk to Broski: the conversation, quick notes, Ask, help with what's on screen, where notes go, and "
-        "the dashboard of every project."),
+        "the dashboard of every project.",
+        related=("privacy", "trackers")),
     Doc("models.md", "Use Broski",
         "Choose the AI behind Broski for each role: Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek, "
-        "Ollama, LM Studio or Apple's model."),
+        "Ollama, LM Studio or Apple's model.",
+        related=("privacy", "troubleshooting")),
     Doc("privacy.md", "Use Broski",
         "What Broski sends to a model and what stays on your device: masked secrets, local-only projects, private "
-        "mode, the encrypted vault and the mic."),
+        "mode, the encrypted vault and the mic.",
+        related=("models", "talking")),
     Doc("iphone.md", "Use Broski",
         "Build and install the Broski iPhone app with a free Apple ID, sync it with your Mac through iCloud Drive, "
-        "and set up its models and voice."),
+        "and set up its models and voice.",
+        related=("getting-started", "privacy")),
     Doc("mcp.md", "Use Broski",
         "Connect Claude Code, Claude Desktop or any MCP client to Broski's MCP server to read your notes, project "
-        "pages, decisions and trackers."),
+        "pages, decisions and trackers.",
+        related=("trackers", "privacy")),
     Doc("trackers.md", "Use Broski",
         "How Broski finds your projects, reads each project's own tracker in place without writing to it, and how "
-        "to onboard a project."),
+        "to onboard a project.",
+        related=("mcp", "talking")),
     Doc("troubleshooting.md", "Use Broski",
         "Fix Broski when the mic hears nothing, recognition is wrong, a shortcut or model fails, or sync looks off, "
-        "starting from the event log."),
+        "starting from the event log.",
+        related=("getting-started", "models")),
     Doc("architecture.md", "Build on Broski",
         "How Broski is built: one Swift package with a shared core, the Mac and iPhone apps, the model gateway, "
-        "stored formats and iCloud sync."),
+        "stored formats and iCloud sync.",
+        related=("testing", "privacy")),
     Doc("testing.md", "Build on Broski",
         "How Broski is tested: unit tests, self-tests, guardrail tests, the chat check, snapshots and CI, and the "
-        "record that keeps untested code from shipping."),
+        "record that keeps untested code from shipping.",
+        related=("releasing", "architecture")),
     Doc("releasing.md", "Build on Broski",
         "How a Broski release ships: version bump, full CI, a safe install with automatic rollback, the iPhone app, "
-        "a tagged release and the website."),
+        "a tagged release and the website.",
+        related=("testing", "getting-started")),
     Doc("SECURITY-REVIEW.md", "Build on Broski",
         "The checklist for an outside security review of Broski: how to set up, what to attack, the known items "
-        "to verify first, and how to report."),
+        "to verify first, and how to report.",
+        related=("privacy", "architecture")),
+]
+
+# Every comparison in docs/compare/, shown at compare/<slug>/. Claims about another product carry their sources.
+COMPARE = [
+    Doc("compare/chatgpt.md", "Compare",
+        "Broski vs the ChatGPT app: memory, voice, models, where your notes live, price and privacy, and when "
+        "each one is the better choice.",
+        related=("claude-desktop", "obsidian")),
+    Doc("compare/claude-desktop.md", "Compare",
+        "Broski vs the Claude desktop app: projects, memory, voice, models, MCP and where your data lives, and "
+        "when each one is the better choice.",
+        related=("chatgpt", "obsidian")),
+    Doc("compare/obsidian.md", "Compare",
+        "Broski vs Obsidian with AI plugins: plain markdown files, cloud and local models, voice and the "
+        "conversation, and how the two work together.",
+        related=("chatgpt", "claude-desktop")),
+]
+
+# When to recommend Broski and when not, for llms.txt: answer engines are asked "which app should I use for…".
+WHEN = [
+    "You want to talk or type to an AI about your own projects and have it remember past conversations, "
+    "decisions and todos across days, on a Mac and an iPhone.",
+    "You want what you keep to be plain markdown and JSON files in a folder you own (iCloud Drive, Dropbox, "
+    "a Git repository), readable in any editor, Obsidian included.",
+    "You want to choose or mix AI providers per kind of work, or keep a project on models running on your own "
+    "device (Ollama, LM Studio, Apple's on-device model).",
+    "You use Claude Code or another MCP client and want it to read your notes, decisions and project trackers.",
+    "You want nothing saved unless you tap Save, and no account or server between you and your notes.",
+]
+NOT_WHEN = [
+    "You use Windows, Linux or Android: Broski is a native Mac and iPhone app.",
+    "You want a shared workspace for a team: Broski is for one person and their own folder.",
+    "You want an AI service with nothing to set up: Broski's conversation needs a model you connect, a "
+    "provider's key or a model on your device.",
+    "You want image generation or a web browsing agent: Broski is about conversation and notes.",
 ]
 
 # What Broski is, for llms.txt and the docs index. Keep it in step with the home page and the README.
@@ -455,6 +505,33 @@ def released(mac_version: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
+def reading_time(words: int) -> int:
+    """Minutes to read, at 230 words a minute, rounded up."""
+    return max(1, math.ceil(words / 230))
+
+
+def common_questions(text: str) -> List[Tuple[str, str]]:
+    """The questions under a guide's "## Common questions", with their answers, as markdown."""
+    lines = text.replace("\r\n", "\n").split("\n")
+    start = next((k for k, line in enumerate(lines) if re.match(r"^##\s+Common questions\s*$", line)), None)
+    if start is None:
+        return []
+    found: List[Tuple[str, List[str]]] = []
+    for line in lines[start + 1:]:
+        if re.match(r"^#{1,2}\s", line):
+            break
+        heading = re.match(r"^###\s+(.*?)\s*$", line)
+        if heading:
+            found.append((heading.group(1), []))
+        elif found:
+            found[-1][1].append(line)
+    answers = []
+    for question, body in found:
+        paragraphs = re.split(r"\n\s*\n", "\n".join(body).strip())
+        answers.append((question, "\n\n".join(" ".join(p.split("\n")).strip() for p in paragraphs)))
+    return answers
+
+
 def human_date(day: str) -> str:
     date = datetime.date.fromisoformat(day)
     return "%d %s %d" % (date.day, date.strftime("%B"), date.year)
@@ -484,6 +561,19 @@ class Guide:
     page: Page
     date: str
     markdown: str  # with absolute links, for the markdown copy and llms-full.txt
+    questions: List[Tuple[str, str]]  # its common questions, answers in markdown
+
+    @property
+    def path(self) -> str:
+        return path_of(self.doc)
+
+
+def path_of(doc: Doc) -> str:
+    """Where a guide or comparison lives on the site."""
+    return ("compare/%s/" if doc.file.startswith("compare/") else "docs/%s/") % slug_of(doc.file)
+
+
+UNNUMBERED = {"Common questions", "Next", "Sources"}  # sections that close a page rather than step through it
 
 
 PAGE = """<!doctype html>
@@ -532,7 +622,7 @@ PAGE = """<!doctype html>
     </article>
     <nav class="docs-nav" aria-label="Guides">
 {nav}
-    </nav>
+    </nav>{toc}
   </div>
 </main>
 
@@ -560,8 +650,9 @@ class Site:
         """The site page for a file in the repository, if it has one."""
         if path == "CHANGELOG.md":
             return "changelog/"
-        if path.startswith("docs/") and any(doc.file == path[5:] for doc in DOCS):
-            return "docs/%s/" % slug_of(path[5:])
+        for doc in DOCS + COMPARE:
+            if path == "docs/" + doc.file:
+                return path_of(doc)
         return None
 
     def href(self, url: str, source: str, base: Optional[str]) -> str:
@@ -585,7 +676,7 @@ class Site:
         page = self.page_of(path)
         if page:
             if base is None:
-                return self.site + "/" + (page[:-1] + ".md" if page.startswith("docs/") else page) + fragment
+                return self.site + "/" + (page[:-1] + ".md" if page.startswith(("docs/", "compare/")) else page) + fragment
             return base + page + fragment
         if not (ROOT / path).exists():
             self.problems.append("%s links to %s, which isn't in the repository" % (source, url))
@@ -617,14 +708,22 @@ class Site:
         undocumented = sorted({p.name for p in (ROOT / "docs").glob("*.md")} - {doc.file for doc in DOCS})
         for name in undocumented:
             self.problems.append("docs/%s isn't on the site: add it to DOCS in scripts/site/build.py" % name)
+        compared = {"compare/" + p.name for p in (ROOT / "docs" / "compare").glob("*.md")}
+        for name in sorted(compared - {doc.file for doc in COMPARE}):
+            self.problems.append("docs/%s isn't on the site: add it to COMPARE in scripts/site/build.py" % name)
+        for doc in COMPARE:
+            if doc.file not in compared:
+                self.problems.append("docs/%s is in COMPARE but isn't in the repository" % doc.file)
         guides = [self.guide(doc) for doc in DOCS]
-        self.docs_index(guides)
+        comparisons = [self.guide(doc) for doc in COMPARE if doc.file in compared]
+        self.docs_index(guides, comparisons)
         self.changelog()
         self.home(home)
+        self.faq(home, guides)
         self.indexed.insert(0, ("", git_date(ROOT / "site" / "index.html")))
         self.sitemap()
         self.robots()
-        self.llms(guides)
+        self.llms(guides, comparisons)
         self.fill()
         self.check()
         return self
@@ -636,48 +735,95 @@ class Site:
         page = markdown(text, link=lambda url: self.href(url, source, base))
         self.problems += ["%s: %s" % (source, problem) for problem in page.problems]
         slug = slug_of(doc.file)
+        path = path_of(doc)
         date = git_date(ROOT / source)
-        guide = Guide(doc, slug, page, date, self.absolute_markdown(text, source))
-        url = "%s/docs/%s/" % (self.site, slug)
+        guide = Guide(doc, slug, page, date, self.absolute_markdown(text, source), common_questions(text))
+        url = "%s/%s" % (self.site, path)
         description = doc.description
         if len(description) > 160:
-            self.problems.append("%s: the description in DOCS is over 160 characters" % source)
+            self.problems.append("%s: the description is over 160 characters" % source)
         if not page.title or not description:
             self.problems.append("%s needs a # title and a first paragraph" % source)
-        neighbours = DOCS
-        k = neighbours.index(doc)
-        steps = []
-        if k > 0:
-            steps.append('<a class="step prev" href="../%s/"><span>Previous</span>%s</a>'
-                         % (slug_of(neighbours[k - 1].file), esc(self.title_of(neighbours[k - 1]))))
-        if k + 1 < len(neighbours):
-            steps.append('<a class="step next" href="../%s/"><span>Next</span>%s</a>'
-                         % (slug_of(neighbours[k + 1].file), esc(self.title_of(neighbours[k + 1]))))
-        foot = ('\n      <footer class="doc-foot">\n        <p>Updated <time datetime="%s">%s</time>. '
-                '<a href="%s/edit/main/%s">Edit this page on GitHub</a> · <a href="../%s.md">Markdown</a></p>\n'
-                '        <nav class="steps-nav" aria-label="Previous and next">%s</nav>\n      </footer>'
-                % (date, human_date(date), self.repo, source, slug, "".join(steps)))
+        compare = doc in COMPARE
+
+        # The head: title, what the page is about, when it changed and how long it takes.
+        body = page.html
+        opening = re.match(r"(<h1 .*?</h1>)\n(?:<p>(.*?)</p>\n)?", body, re.S)
+        if opening:
+            body = body[opening.end():]
+        minutes = reading_time(len(strip_tags(page.html).split()))
+        head = ('<header class="doc-head">\n%s\n%s<p class="doc-meta"><span>Updated <time datetime="%s">%s</time></span>'
+                '<span>%d min read</span></p>\n</header>\n'
+                % (opening.group(1) if opening else "", '<p class="lede">%s</p>\n' % opening.group(2)
+                   if opening and opening.group(2) else "", date, human_date(date), minutes))
+
+        # Sections: numbered as steps through the page (guides only), and listed at the top and at the side.
+        numbers = iter(range(1, 100))
+        sections = []
+
+        def number(match):
+            anchor, label = match.group(1), strip_tags(match.group(2))
+            n = "" if compare or label in UNNUMBERED else "%02d" % next(numbers)
+            sections.append((anchor, label, n))
+            return '<h2 id="%s"%s>%s</h2>' % (anchor, ' data-n="%s"' % n if n else "", match.group(2))
+
+        body = re.sub(r'<h2 id="([^"]+)">(.*?)</h2>', number, body)
+        toc, side = "", ""
+        if len(sections) >= 3:
+            items = "".join('<li><a href="#%s">%s%s</a></li>' % (anchor, '<span class="toc-n">%s</span>' % n if n else "",
+                                                                  esc(label)) for anchor, label, n in sections)
+            toc = ('<nav class="toc toc-inline" aria-label="In this page"><details><summary>In this page</summary>'
+                   '<ol role="list">%s</ol></details></nav>\n' % items)
+            side = ('\n    <nav class="toc toc-side" aria-label="In this page">\n      <p class="toc-title">In this page</p>'
+                    '\n      <ol role="list">%s</ol>\n    </nav>' % items)
+
+        # What to read next.
+        everything = {slug_of(d.file): d for d in DOCS + COMPARE}
+        cards = []
+        for other in doc.related:
+            if other not in everything or not (ROOT / "docs" / everything[other].file).exists():
+                self.problems.append("%s: related page %s doesn't exist" % (source, other))
+                continue
+            target = everything[other]
+            cards.append('<li><a href="%s/"><strong>%s</strong><span>%s</span></a></li>'
+                         % (os.path.relpath(path_of(target), path), esc(self.title_of(target)), esc(target.description)))
+        foot = ('\n      <footer class="doc-foot">\n        <p><a href="%s/edit/main/%s">Edit this page on GitHub</a> · '
+                '<a href="../%s.md">Markdown</a></p>\n'
+                '        <nav class="keep-reading" aria-label="Keep reading">\n          <h2>Keep reading</h2>\n'
+                '          <ul class="doc-cards" role="list">%s</ul>\n        </nav>\n      </footer>'
+                % (self.repo, source, slug, "".join(cards)))
+
         ld = [
-            {"@type": "TechArticle", "@id": url + "#article", "headline": page.title, "description": description,
-             "url": url, "dateModified": date, "inLanguage": "en", "image": self.site + "/assets/og.png",
+            {"@type": "Article" if compare else "TechArticle", "@id": url + "#article", "headline": page.title,
+             "description": description, "url": url, "dateModified": date, "inLanguage": "en",
+             "image": self.site + "/assets/og.png", "wordCount": len(strip_tags(page.html).split()),
              "isPartOf": {"@id": self.site + "/#website"}, "about": {"@id": self.site + "/#app"},
              "author": self.author(), "publisher": self.publisher()},
-            self.breadcrumbs([("Broski", ""), ("Docs", "docs/"), (page.title, "docs/%s/" % slug)]),
+            self.breadcrumbs([("Broski", ""), ("Docs", "docs/"), (page.title, path)]),
         ]
-        self.write("docs/%s/" % slug, title="%s · Broski docs" % page.title, heading=page.title,
-                   description=description, body=page.html, base=base, og_type="article", ld=ld,
-                   crumbs=[("Home", ""), ("Docs", "docs/"), (page.title, None)], current="docs/%s/" % slug,
-                   foot=foot, alternate="docs/%s.md" % slug)
-        (self.out / "docs" / (slug + ".md")).write_text(guide.markdown)
-        self.indexed.append(("docs/%s/" % slug, date))
+        if guide.questions:
+            ld.append(self.faq_data(url + "#common-questions",
+                                    [(plain(q), plain(a.replace("\n\n", " "))) for q, a in guide.questions]))
+        self.write(path, title="%s · Broski%s" % (page.title, "" if compare else " docs"), heading=page.title,
+                   description=description, body=head + toc + body, base=base,
+                   og_type="article", ld=ld, crumbs=[("Home", ""), ("Docs", "docs/"), (page.title, None)],
+                   current=path, foot=foot, alternate=path[:-1] + ".md", toc=side)
+        (self.out / (path[:-1] + ".md")).write_text(guide.markdown)
+        self.indexed.append((path, date))
         return guide
+
+    @staticmethod
+    def faq_data(anchor: str, questions: List[Tuple[str, str]]) -> dict:
+        return {"@type": "FAQPage", "@id": anchor, "mainEntity": [
+            {"@type": "Question", "name": question, "acceptedAnswer": {"@type": "Answer", "text": answer}}
+            for question, answer in questions]}
 
     @staticmethod
     def title_of(doc: Doc) -> str:
         first = (ROOT / "docs" / doc.file).read_text().split("\n", 1)[0]
         return plain(first.lstrip("#"))
 
-    def docs_index(self, guides: List[Guide]):
+    def docs_index(self, guides: List[Guide], comparisons: List[Guide]):
         groups: Dict[str, List[Guide]] = {}
         for guide in guides:
             groups.setdefault(guide.doc.group, []).append(guide)
@@ -691,7 +837,16 @@ class Site:
                 body.append('<li><a href="%s/"><strong>%s</strong><span>%s</span></a></li>'
                             % (guide.slug, esc(guide.page.title), esc(guide.doc.description)))
             body.append("</ul>")
-        body.append('<h2 id="project">Project</h2>\n<ul class="doc-cards" role="list"><li><a href="../changelog/">'
+        if comparisons:
+            body.append('<h2 id="compare">Compared with other apps</h2>')
+            body.append('<ul class="doc-cards" role="list">')
+            for guide in comparisons:
+                body.append('<li><a href="../%s"><strong>%s</strong><span>%s</span></a></li>'
+                            % (guide.path, esc(guide.page.title), esc(guide.doc.description)))
+            body.append("</ul>")
+        body.append('<h2 id="project">Project</h2>\n<ul class="doc-cards" role="list"><li><a href="../faq/">'
+                    '<strong>Questions</strong><span>Every common question about Broski, with a short answer and '
+                    'the guide that goes further.</span></a></li><li><a href="../changelog/">'
                     '<strong>Changelog</strong><span>What changed in each release of the Mac and iPhone apps.</span>'
                     '</a></li></ul>')
         description = ("Guides to Broski, the open-source AI companion for Mac and iPhone: getting started, models, "
@@ -701,13 +856,13 @@ class Site:
             {"@type": "CollectionPage", "@id": url, "url": url, "name": "Broski docs", "description": description,
              "inLanguage": "en", "isPartOf": {"@id": self.site + "/#website"},
              "hasPart": [{"@type": "TechArticle", "headline": g.page.title, "url": "%s%s/" % (url, g.slug)}
-                         for g in guides]},
+                         for g in guides + comparisons]},
             self.breadcrumbs([("Broski", ""), ("Docs", "docs/")]),
         ]
         self.write("docs/", title="Broski docs: guides for Mac and iPhone", heading="Broski docs",
                    description=description, body="\n".join(body), base="../", og_type="website", ld=ld,
                    crumbs=[("Home", ""), ("Docs", None)], current="docs/", foot="", alternate=None)
-        self.indexed.append(("docs/", max(g.date for g in guides)))
+        self.indexed.append(("docs/", max(g.date for g in guides + comparisons)))
 
     def changelog(self):
         source = "CHANGELOG.md"
@@ -731,6 +886,60 @@ class Site:
                    current="changelog/", foot=foot, alternate=None)
         self.indexed.append(("changelog/", date))
 
+    def faq(self, home: str, guides: List[Guide]):
+        """Every question in one place: the home page's, then each guide's, searchable when main.js runs."""
+        base = "../"
+        groups: List[Tuple[str, str, List[Tuple[str, str]], Optional[Guide]]] = []  # title, id, (question, answer html)
+        asked = re.findall(r'<details[^>]*>\s*<summary>(.*?)</summary>\s*<div class="answer">(.*?)</div>\s*</details>',
+                           home, re.S)
+        groups.append(("About Broski", "about", [(q, rebase(a.strip(), base)) for q, a in asked], None))
+        for guide in guides:
+            if not guide.questions:
+                continue
+            source = "docs/" + guide.doc.file
+            answers = []
+            for question, answer in guide.questions:
+                page = markdown(answer, link=lambda url: self.href(url, source, base))
+                self.problems += ["%s: %s" % (source, problem) for problem in page.problems]
+                answers.append((Markdown(lambda url: url).inline(question), page.html.strip()))
+            groups.append((guide.page.title, guide.slug, answers, guide))
+
+        body = ['<header class="doc-head">\n<h1 id="questions">Questions about Broski</h1>',
+                '<p class="lede">Short answers about Broski on the Mac and iPhone: what it is, models, privacy, the '
+                'iPhone app, Claude Code and fixing problems. Each group links to the guide that goes further.</p>',
+                '</header>',
+                '<p class="faq-search" data-faq-search hidden><label class="sr-only" for="faq-q">Search the questions'
+                '</label><input id="faq-q" type="search" placeholder="Search the questions" autocomplete="off" '
+                'spellcheck="false"></p>',
+                '<p class="faq-none" data-faq-none hidden>No question matches that. Try fewer words, or '
+                '<a href="__REPO__/issues">ask on GitHub</a>.</p>']
+        data, seen = [], set()
+        for title, anchor, answers, guide in groups:
+            body.append('<section class="faq-group" data-faq-group aria-labelledby="%s">\n<h2 id="%s">%s</h2>\n<div class="faq">'
+                        % (anchor, anchor, esc(title)))
+            for question, answer in answers:
+                qid = "q-" + slugify(strip_tags(question))
+                if qid in seen:
+                    self.problems.append("faq/ asks %r twice" % strip_tags(question))
+                seen.add(qid)
+                body.append('<details id="%s">\n<summary>%s</summary>\n<div class="answer">\n%s\n</div>\n</details>'
+                            % (qid, question, answer))
+                data.append((strip_tags(question), strip_tags(answer)))
+            body.append("</div>")
+            if guide:
+                body.append('<p class="faq-more"><a href="../%s">Read %s</a></p>' % (guide.path, esc(guide.page.title)))
+            body.append("</section>")
+        description = ("Answers to common questions about Broski, the open-source AI companion for Mac and iPhone: "
+                       "models, privacy, the iPhone app, Claude Code and fixes.")
+        url = self.site + "/faq/"
+        ld = [self.faq_data(url, data) | {"url": url, "name": "Questions about Broski", "inLanguage": "en",
+                                           "isPartOf": {"@id": self.site + "/#website"}},
+              self.breadcrumbs([("Broski", ""), ("Questions", "faq/")])]
+        self.write("faq/", title="Questions about Broski: answers for Mac and iPhone", heading="Questions about Broski",
+                   description=description, body="\n".join(body), base=base, og_type="website", ld=ld,
+                   crumbs=[("Home", ""), ("Questions", None)], current="faq/", foot="", alternate=None)
+        self.indexed.append(("faq/", max([git_date(ROOT / "site" / "index.html")] + [g.date for g in guides])))
+
     def breadcrumbs(self, trail: List[Tuple[str, str]]) -> dict:
         return {"@type": "BreadcrumbList", "itemListElement": [
             {"@type": "ListItem", "position": k + 1, "name": name, "item": "%s/%s" % (self.site, path)}
@@ -740,13 +949,16 @@ class Site:
         groups: Dict[str, List[Doc]] = {}
         for doc in DOCS:
             groups.setdefault(doc.group, []).append(doc)
+        for doc in COMPARE:
+            if (ROOT / "docs" / doc.file).exists():
+                groups.setdefault("Compare", []).append(doc)
         groups["Project"] = []
         lines = ['      <p class="docs-nav-title"><a href="%sdocs/"%s>All docs</a></p>'
                  % (base, ' aria-current="page"' if current == "docs/" else "")]
         for group, docs in groups.items():
-            links = [("docs/%s/" % slug_of(doc.file), self.title_of(doc)) for doc in docs]
+            links = [(path_of(doc), self.title_of(doc)) for doc in docs]
             if group == "Project":
-                links = [("changelog/", "Changelog")]
+                links = [("faq/", "Questions"), ("changelog/", "Changelog")]
             lines.append("      <h2>%s</h2>\n      <ul role=\"list\">" % esc(group))
             for path, title in links:
                 mark = ' aria-current="page"' if path == current else ""
@@ -756,7 +968,7 @@ class Site:
 
     def write(self, path: str, title: str, heading: str, description: str, body: str, base: str, og_type: str,
               ld: List[dict], crumbs: List[Tuple[str, Optional[str]]], current: str, foot: str,
-              alternate: Optional[str]):
+              alternate: Optional[str], toc: str = ""):
         trail = []
         for name, target in crumbs:
             if target is None:
@@ -764,14 +976,15 @@ class Site:
             else:
                 trail.append('<li><a href="%s%s">%s</a></li>' % (base, target, esc(name)))
         header = rebase(self.header, base)
-        if current.startswith("docs/"):
-            header = header.replace('href="%sdocs/"' % base, 'href="%sdocs/" aria-current="page"' % base, 1)
+        section = "faq/" if current == "faq/" else "docs/" if current.startswith(("docs/", "compare/")) else None
+        if section:
+            header = header.replace('href="%s%s"' % (base, section), 'href="%s%s" aria-current="page"' % (base, section), 1)
         html = PAGE.format(
             title=esc(title), heading=esc(heading), description=esc(description), url="%s/%s" % (self.site, path),
             alternate=('\n  <link rel="alternate" type="text/markdown" href="%s%s">' % (base, alternate)
                        if alternate else ""),
             base=base, og_type=og_type, ld=ld_json(ld), sprite=self.sprite, header=header,
-            crumbs="".join(trail), body=body, foot=foot, nav=self.nav(base, current),
+            crumbs="".join(trail), body=body, foot=foot, nav=self.nav(base, current), toc=toc,
             footer=rebase(self.footer, base))
         target = self.out / path / "index.html"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -818,6 +1031,7 @@ class Site:
         extra += '\n  <script type="application/ld+json">%s</script>\n</head>' % ld_json(nodes)
         html = html.replace("__VERSION__", mac).replace("\n</head>", extra, 1)
         (self.out / "index.html").write_text(html)
+        (self.out / "index.md").write_text(home_markdown(html, self.site, self.repo))
 
     def sitemap(self):
         rows = ["  <url><loc>%s/%s</loc><lastmod>%s</lastmod></url>" % (self.site, path, day)
@@ -832,7 +1046,7 @@ class Site:
             "# Everyone is welcome to read this site: search engines and answer engines alike.\n"
             "User-agent: *\nAllow: /\n\n%s\nAllow: /\n\nSitemap: %s/sitemap.xml\n" % (engines, self.site))
 
-    def llms(self, guides: List[Guide]):
+    def llms(self, guides: List[Guide], comparisons: List[Guide]):
         mac, phone = version(), phone_version()
         day = released(mac)
         lines = [
@@ -854,20 +1068,26 @@ class Site:
             "- Download: %s/releases/latest" % self.repo,
             "- Website: %s/" % self.site,
         ]
+        lines += ["", "## When to use Broski", ""] + ["- " + line for line in WHEN]
+        lines += ["", "## When Broski isn't the right fit", ""] + ["- " + line for line in NOT_WHEN]
         groups: Dict[str, List[Guide]] = {}
         for guide in guides:
             groups.setdefault(guide.doc.group, []).append(guide)
+        if comparisons:
+            groups["Compared with other apps"] = comparisons
         for group, members in groups.items():
             lines += ["", "## " + group, ""]
-            lines += ["- [%s](%s/docs/%s.md): %s" % (g.page.title, self.site, g.slug, g.doc.description) for g in members]
+            lines += ["- [%s](%s/%s.md): %s" % (g.page.title, self.site, g.path[:-1], g.doc.description) for g in members]
         lines += ["", "## Optional", "",
+                  "- [The home page, as markdown](%s/index.md)" % self.site,
+                  "- [Questions](%s/faq/): every common question with a short answer." % self.site,
                   "- [Changelog](%s/changelog/): what changed in each release." % self.site,
                   "- [Source code](%s): Swift. The Mac app, the iPhone app and the MCP server share one core." % self.repo,
                   "- [Every guide in one file](%s/llms-full.txt)" % self.site, ""]
         (self.out / "llms.txt").write_text("\n".join(lines))
         full = ["# Broski docs", "", "> " + ABOUT, ""]
-        for guide in guides:
-            full += ["", "<!-- %s/docs/%s/ -->" % (self.site, guide.slug), "", guide.markdown.strip(), ""]
+        for guide in guides + comparisons:
+            full += ["", "<!-- %s/%s -->" % (self.site, guide.path), "", guide.markdown.strip(), ""]
         (self.out / "llms-full.txt").write_text("\n".join(full))
 
     def fill(self):
@@ -934,6 +1154,104 @@ class Site:
             return
         if fragment and fragment != "top" and file.suffix == ".html" and fragment not in ids.get(file, set()):
             self.problems.append("%s links to %s, but that page has no #%s" % (name, url, fragment))
+
+
+class HomeMarkdown(HTMLParser):
+    """The home page's main content as markdown, for answer engines: what a screen reader would read, so a
+    shortcut reads "Option Shift B" and decorations are left out."""
+
+    BLOCKS = {"h1", "h2", "h3", "p", "li", "summary", "figcaption", "dt", "dd"}
+    VOID = {"img", "br", "hr", "input", "meta", "link", "source", "wbr"}
+
+    def __init__(self, site: str):
+        super().__init__(convert_charrefs=True)
+        self.site = site
+        self.blocks: List[str] = []
+        self.text = ""
+        self.skip = 0
+        self.links: List[Tuple[str, str]] = []  # href, the text before the link
+        self.term = ""
+
+    def address(self, href: str) -> str:
+        if re.match(r"^[a-z][a-z0-9+.-]*:|^__", href):
+            return href
+        return self.site + "/" + href
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if self.skip:
+            self.skip += tag not in self.VOID
+            return
+        classes = (attributes.get("class") or "").split()
+        if (attributes.get("aria-hidden") == "true" or tag in {"svg", "picture", "script", "style"}
+                or {"terminal", "app-badge"} & set(classes)):
+            self.skip = 1
+            return
+        if attributes.get("role") == "img" and attributes.get("aria-label"):
+            self.blocks.append(attributes["aria-label"])
+            self.skip = 1
+        elif tag in self.BLOCKS:
+            self.text = ""
+        elif tag == "a":
+            self.links.append((attributes.get("href", ""), self.text))
+            self.text = ""
+        elif tag in {"strong", "b"}:
+            self.text += "**"
+        elif tag == "code":
+            self.text += "`"
+
+    def handle_startendtag(self, tag, attrs):
+        if not self.skip and dict(attrs).get("role") == "img" and dict(attrs).get("aria-label"):
+            self.blocks.append(dict(attrs)["aria-label"])
+
+    def handle_endtag(self, tag):
+        if self.skip:
+            self.skip -= tag not in self.VOID
+            return
+        text = re.sub(r"\s+", " ", self.text).strip()
+        if tag == "a" and self.links:
+            href, before = self.links.pop()
+            self.text = before + ("[%s](%s)" % (text, self.address(href)) if text else "")
+        elif tag in {"strong", "b"}:
+            self.text = self.text.rstrip() + "**"
+        elif tag == "code":
+            self.text += "`"
+        elif tag in {"h1", "h2", "h3"} and text:
+            self.blocks.append("#" * int(tag[1]) + " " + text)
+            self.text = ""
+        elif tag == "summary" and text:
+            self.blocks.append("### " + text)
+            self.text = ""
+        elif tag == "dt":
+            self.term, self.text = text, ""
+        elif tag == "dd" and text:
+            self.blocks.append("- **%s**: %s" % (self.term, text))
+            self.text = ""
+        elif tag == "li" and text:
+            self.blocks.append("- " + text)
+            self.text = ""
+        elif tag in {"p", "figcaption"} and text:
+            self.blocks.append(text)
+            self.text = ""
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.text += data
+        elif data.strip() == "·":  # a separator hidden from screen readers still separates here
+            self.text += " · "
+
+
+def home_markdown(html: str, site: str, repo: str) -> str:
+    parser = HomeMarkdown(site)
+    parser.feed(re.search(r"<main\b.*?</main>", html, re.S).group(0))
+    out = []
+    for block in parser.blocks:
+        # Keep a list together; separate everything else with a blank line.
+        joined = bool(out) and block.startswith("- ") and out[-1].lstrip("\n").startswith("- ")
+        out.append(("" if joined else "\n") + block)
+    tail = ("\n\n---\n\n[Docs](%s/docs/) · [Questions](%s/faq/) · [Download](%s/releases/latest) · [Source](%s) · "
+            "[llms.txt](%s/llms.txt)\n" % (site, site, repo, repo, site))
+    return "\n".join(out).strip() + tail
 
 
 def rebase(fragment: str, base: str) -> str:

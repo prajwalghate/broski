@@ -129,6 +129,20 @@ Download the new release and replace the app in Applications. Your notes, settin
 3. Delete your Broski folder if you don't want your notes anymore.
 4. Delete `~/Library/Application Support/Broski` to remove your keys and the voice models.
 
+## Common questions
+
+### Which Macs does Broski run on?
+
+A Mac with Apple silicon, on macOS 14 Sonoma or later. Building it from source needs macOS 15 or later and the full Xcode 26 or later.
+
+### Do I have to talk to Broski, or can I type?
+
+You can type everything. Voice is optional: the conversation and quick notes both take voice or typing; see [Talking to Broski](talking.md).
+
+### Can I keep my Broski notes in iCloud Drive or Dropbox?
+
+Yes. Go to Settings › General › **Notes folder** › Choose and pick the folder: an empty folder gets your notes moved into it, and a folder that already has Broski notes is used as it is.
+
 ## Next
 
 - [Talking to Broski](talking.md): what to say, and where notes go.

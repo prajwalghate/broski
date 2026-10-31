@@ -85,3 +85,17 @@ Render every screen with sample data, in light and dark:
 This draws the dashboard, the panel states, the conversation, onboarding and settings.
 
 Still stuck? [SUPPORT.md](../SUPPORT.md) says where to ask and what to include.
+
+## Common questions
+
+### Why doesn't Broski hear me?
+
+Check Dictation first: turn on System Settings › Keyboard › Dictation, because Apple's recognizer won't run without it. If the panel stays empty, check the input device in System Settings › Sound, since an iPhone or Bluetooth mic can win.
+
+### Why does holding fn open the emoji picker?
+
+Set System Settings › Keyboard › "Press fn key to" (shown with a globe) to **Do Nothing**. Holding fn to talk also needs Accessibility.
+
+### Why does Broski use so much battery?
+
+The wake word keeps the mic on and uses noticeably more battery. Turn it off in the menu bar and use the shortcut or hold fn instead.

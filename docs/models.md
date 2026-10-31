@@ -87,3 +87,17 @@ Settings › Models › **Spending** shows today's spend, this month's, and this
 ## When something goes wrong
 
 Errors name the provider and what to do: a key it didn't accept, an account out of credit, a model it doesn't have, a rate limit, or a local server that isn't running ("Couldn't reach Ollama at http://localhost:11434/v1. Is it running?"). Fix it in Settings › Models. [Troubleshooting](troubleshooting.md) has more.
+
+## Common questions
+
+### Can I use a different model for riffs than for everyday chat?
+
+Yes. Riffs use the deep role and the conversation uses the everyday role, and Settings › Models maps each role to its own provider and model.
+
+### Can I set a spending limit?
+
+Yes, a daily limit in Settings › Models › **Spending**. Past it, work moves one role down for the rest of the day (deep to everyday, everyday to fast), and because only Claude calls are priced, the limit counts only Claude spending.
+
+### Where does Broski keep my API key?
+
+On the device you typed it on. On the Mac it's in `~/Library/Application Support/Broski/secrets.json`, readable only by your user; on the iPhone it's in the Keychain, and keys never sync between them.

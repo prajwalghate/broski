@@ -179,6 +179,21 @@ class LinkTests(unittest.TestCase):
         self.assertTrue(any("NOPE.md" in problem for problem in self.site.problems))
 
 
+class GuideTests(unittest.TestCase):
+    def test_reading_time_rounds_up_and_is_at_least_a_minute(self):
+        self.assertEqual(build.reading_time(10), 1)
+        self.assertEqual(build.reading_time(230), 1)
+        self.assertEqual(build.reading_time(231), 2)
+
+    def test_common_questions_are_read_from_their_section(self):
+        text = ("# T\n\nIntro.\n\n## Setup\n\n### Not a question\n\nNo.\n\n## Common questions\n\n"
+                "### Can I type?\n\nYes. See [Talking](talking.md).\n\n### Is it `free`?\n\nYes.\n\nReally.\n\n"
+                "## Next\n\nMore.\n")
+        self.assertEqual(build.common_questions(text),
+                         [("Can I type?", "Yes. See [Talking](talking.md)."), ("Is it `free`?", "Yes.\n\nReally.")])
+        self.assertEqual(build.common_questions("# T\n\nNo questions.\n"), [])
+
+
 class SiteTests(unittest.TestCase):
     """Builds the real site from site/ and docs/ into a temporary folder."""
 
@@ -299,6 +314,103 @@ class SiteTests(unittest.TestCase):
     def test_the_version_is_the_newest_release_tag(self):
         self.assertEqual(build.newest_tag(["v0.9.6", "v0.11.3", "v0.11.2", "v0.10.0", "nightly"]), "0.11.3")
         self.assertIsNone(build.newest_tag(["nightly"]))
+
+    def guide(self, slug):
+        return (self.out / "docs" / slug / "index.html").read_text()
+
+    def graph(self, html):
+        data = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S).group(1))
+        return data["@graph"]
+
+    def test_a_guide_opens_with_its_date_and_reading_time(self):
+        head = re.search(r'<header class="doc-head">(.*?)</header>', self.guide("models"), re.S)
+        self.assertIsNotNone(head)
+        self.assertIn("<h1", head.group(1))
+        self.assertRegex(head.group(1), r'<time datetime="\d{4}-\d{2}-\d{2}">')
+        self.assertRegex(head.group(1), r"\d+ min read")
+
+    def test_a_guide_lists_its_sections_with_numbers(self):
+        html = self.guide("models")
+        sections = re.findall(r'<h2 id="([^"]+)"( data-n="\d\d")?>', html)
+        self.assertGreaterEqual(len(sections), 4)
+        numbered = [anchor for anchor, n in sections if n]
+        self.assertEqual(re.findall(r'<h2 id="[^"]+" data-n="(\d\d)">', html),
+                         ["%02d" % k for k in range(1, len(numbered) + 1)])
+        toc = re.search(r'<nav class="toc[^"]*"[^>]*>(.*?)</nav>', html, re.S).group(1)
+        for anchor, _ in sections:
+            self.assertIn('href="#%s"' % anchor, toc)
+        self.assertNotIn('data-n', re.search(r'<h2 id="common-questions"[^>]*>', html).group(0))
+
+    def test_common_questions_become_faq_data_on_each_guide(self):
+        for doc in build.DOCS:
+            if doc.group != "Use Broski":
+                continue
+            slug = build.slug_of(doc.file)
+            text = (build.ROOT / "docs" / doc.file).read_text()
+            asked = [q for q, _ in build.common_questions(text)]
+            self.assertGreaterEqual(len(asked), 3, slug)
+            faq = [node for node in self.graph(self.guide(slug)) if node["@type"] == "FAQPage"]
+            self.assertEqual(len(faq), 1, slug)
+            self.assertEqual([q["name"] for q in faq[0]["mainEntity"]], asked, slug)
+            for q in faq[0]["mainEntity"]:
+                self.assertNotRegex(q["acceptedAnswer"]["text"], r"`|\*\*|\]\(|<[a-z/]", slug)
+
+    def test_the_faq_page_gathers_every_question_and_can_be_searched(self):
+        html = (self.out / "faq" / "index.html").read_text()
+        home = (self.out / "index.html").read_text()
+        asked = re.findall(r"<summary>(.*?)</summary>", html)
+        for question in re.findall(r"<summary>(.*?)</summary>", home):
+            self.assertIn(question, asked)
+        for doc in build.DOCS:
+            for question, _ in build.common_questions((build.ROOT / "docs" / doc.file).read_text()):
+                self.assertIn(build.esc(question), asked)
+        self.assertEqual(len(asked), len(set(asked)))
+        faq = next(node for node in self.graph(html) if node["@type"] == "FAQPage")
+        self.assertEqual(len(faq["mainEntity"]), len(asked))
+        self.assertIn('type="search"', html)
+        self.assertIn('href="../faq/"', (self.out / "docs" / "index.html").read_text())
+
+    def test_each_guide_suggests_what_to_read_next(self):
+        slugs = {build.slug_of(doc.file) for doc in build.DOCS}
+        for doc in build.DOCS:
+            self.assertTrue(doc.related and set(doc.related) <= slugs - {build.slug_of(doc.file)}, doc.file)
+            more = re.search(r'<nav class="keep-reading"[^>]*>(.*?)</nav>', self.guide(build.slug_of(doc.file)), re.S)
+            self.assertIsNotNone(more, doc.file)
+            for slug in doc.related:
+                self.assertIn('href="../%s/"' % slug, more.group(1))
+
+    def test_comparisons_have_pages_sources_and_a_place_in_llms(self):
+        llms = (self.out / "llms.txt").read_text()
+        on_disk = {"compare/" + path.name for path in (build.ROOT / "docs" / "compare").glob("*.md")}
+        self.assertEqual(on_disk, {c.file for c in build.COMPARE})
+        for c in build.COMPARE:
+            slug = build.slug_of(c.file)
+            html = (self.out / "compare" / slug / "index.html").read_text()
+            self.assertIn('id="sources"', html)
+            self.assertTrue((self.out / "compare" / (slug + ".md")).is_file())
+            self.assertIn(SITE + "/compare/" + slug + ".md", llms)
+            self.assertTrue(40 <= len(c.description) <= 160, c.file)
+
+    def test_llms_says_when_to_use_broski_and_when_not(self):
+        llms = (self.out / "llms.txt").read_text()
+        self.assertIn("\n## When to use Broski\n", llms)
+        self.assertIn("\n## When Broski isn't the right fit\n", llms)
+        self.assertIn(SITE + "/index.md", llms)
+        self.assertIn(SITE + "/faq/", llms)
+
+    def test_the_home_page_has_a_markdown_copy(self):
+        home = (self.out / "index.html").read_text()
+        self.assertIn('<link rel="alternate" type="text/markdown" href="index.md">', home)
+        self.assertIn('<link rel="describedby" type="text/plain" href="llms.txt"', home)
+        copy = (self.out / "index.md").read_text()
+        self.assertTrue(copy.startswith("# Talk about your projects. Broski remembers."), copy[:80])
+        self.assertNotRegex(copy, r"<[a-z/]")
+        for question in re.findall(r"<summary>(.*?)</summary>", home):
+            self.assertIn("### " + build.strip_tags(question), copy)
+        self.assertIn("](%s/docs/models/)" % SITE, copy)
+        self.assertIn("](%s/releases/latest)" % REPO, copy)
+        self.assertIn("Option Shift B", copy)
+        self.assertNotIn("⌥⇧B", copy)
 
     def test_site_verification_tags_are_added_when_given(self):
         with tempfile.TemporaryDirectory() as tmp:

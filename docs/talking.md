@@ -148,3 +148,21 @@ Each project gets a living page (`PROJECT.md`, the Overview tab in the dashboard
 Menu bar › **Open dashboard**. Per project: **Overview** (the living page), **Command center**, **Tracker**, **Board** (Inbox, To do, Doing, Done; drag cards between columns), **List**, **Sessions** (a timeline plus the rendered report) and **Screenshots**. The inspector edits the title, body, status, type, priority, tags, project and attachments. Search and filters work across everything, and deleting has undo.
 
 Any note, list, session or report can go to a Claude or ChatGPT prompt, a GitHub issue (the repository comes from the project's git remote) or a Linear issue, Slack (through a webhook) or Notion, a PDF with its screenshots, a Markdown file, or the macOS Share menu.
+
+## Common questions
+
+### Does Broski save things without asking me?
+
+No. When you decide something or name a todo or a bug, Broski offers a save card, and nothing is saved until you tap Save. In the quick note panel, nothing saves until you press ⌘⏎.
+
+### How do I make Broski forget something it learned about me?
+
+Say "forget that …", or just "forget that" for the last fact. Menu bar › **What Broski knows** shows everything it knows about you and what reflection changed, and every change can be undone.
+
+### What is riff mode?
+
+A brainstorm on the deep model: Broski builds on your idea, brings real facts without inventing them, pushes back when something is weak, and ends with one question. Start it with the riff button or "let's riff about …", and say "wrap up" to turn it into one save card.
+
+### Can Broski read a web page if I paste a link?
+
+Yes. It opens the page on your device before it replies and sends the page's text with your message, fenced as data. Pages behind a login can't be read, and Settings › Models › Links turns it off.

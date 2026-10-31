@@ -16,7 +16,8 @@
   <link rel="icon" type="image/png" sizes="64x64" href="assets/icon-64.png">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="alternate" type="text/plain" href="llms.txt" title="Broski for language models">
+  <link rel="describedby" type="text/plain" href="llms.txt" title="Broski for language models">
+  <link rel="alternate" type="text/markdown" href="index.md">
   <link rel="stylesheet" href="styles.css">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Broski">
@@ -73,7 +74,7 @@
         <li><a href="#models">Models</a></li>
         <li><a href="#privacy">Privacy</a></li>
         <li><a href="#developers">Developers</a></li>
-        <li><a href="#faq">FAQ</a></li>
+        <li><a href="faq/">FAQ</a></li>
         <li><a href="docs/">Docs</a></li>
       </ul>
     </nav>
@@ -106,20 +107,64 @@
         <p class="meta"><span>Free and open source</span> <span aria-hidden="true">·</span> <span>Version __VERSION__</span> <span aria-hidden="true">·</span> <span>macOS 14 or later on Apple silicon</span> <span aria-hidden="true">·</span> <span>iPhone app included</span></p>
       </div>
 
-      <div class="hero-shot">
+      <!-- The main flow, played on the page: you talk, Broski answers from your notes, offers a card, you tap Save.
+           Without main.js, or with reduced motion, it shows the conversation as it ends, before Save. -->
+      <figure class="hero-shot">
         <div class="stage stage-hero">
           <svg class="deco deco-spark deco-a" aria-hidden="true" focusable="false"><use href="#spark"/></svg>
           <svg class="deco deco-spark deco-b" aria-hidden="true" focusable="false"><use href="#spark"/></svg>
           <svg class="deco deco-zig deco-c" aria-hidden="true" focusable="false"><use href="#zig"/></svg>
           <svg class="deco deco-dashes deco-d" aria-hidden="true" focusable="false"><use href="#dashes"/></svg>
-          <!-- Placeholder until the real screenshot lands: assets/screens/{light,dark}/home.png, 1120 x 1400. -->
-          <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="assets/screens/dark/home.png">
-            <img class="shot" src="assets/screens/light/home.png" width="560" height="700" fetchpriority="high"
-                 alt="The Broski conversation on a Mac: you talk or type, and Broski answers with what it remembers about your project.">
-          </picture>
+
+          <div class="demo" data-demo role="img"
+               aria-label="A conversation in Broski. You ask whether a recipe app should launch with sharing. Broski answers from your notes, which say sync still drops edits, and suggests launching without sharing first. You agree, and Broski offers to save a decision and a todo, which are kept only when you tap Save.">
+            <div class="demo-head">
+              <img src="assets/avatar.png" width="40" height="40" alt="">
+              <p><strong>Broski</strong><span>Remembers your projects</span></p>
+              <span class="demo-role">Everyday · <span data-demo-model>Claude</span></span>
+            </div>
+            <div class="demo-body">
+              <p class="demo-project"><span>recipe-box</span></p>
+              <p class="demo-you" data-step="ask">Should the recipe app launch with sharing, or keep it solo for v1?</p>
+              <div class="demo-reply" data-step="reply">
+                <img src="assets/avatar.png" width="26" height="26" alt="">
+                <p>Your note from Tuesday says sync still drops edits, so I'd launch solo and add sharing once sync holds. What would tell you it's ready?</p>
+              </div>
+              <p class="demo-you" data-step="answer">A week with no sync errors on both phones. Solo for v1, then.</p>
+              <div class="demo-slot">
+                <div class="demo-card" data-step="card">
+                  <p class="demo-card-title">Save to recipe-box?</p>
+                  <p class="demo-item"><span class="tag tag-decision">Decision</span><span>Launch v1 solo; add sharing after a week without sync errors</span></p>
+                  <p class="demo-item"><span class="tag tag-todo">Todo</span><span>Log sync errors on both phones for a week</span></p>
+                  <p class="demo-actions"><span class="demo-save" data-demo-save>Save</span><span>Not now</span></p>
+                </div>
+                <p class="demo-saved" data-step="saved"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>Saved to recipe-box: 1 decision, 1 todo</p>
+              </div>
+            </div>
+            <div class="demo-composer">
+              <span class="demo-input" data-demo-input>Talk to Broski, or type “note: …”</span>
+              <span class="demo-mic"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"/></svg></span>
+            </div>
+          </div>
+
+          <!-- What the conversation drew on, and what Save kept. -->
+          <div class="floats" aria-hidden="true">
+            <div class="float float-note" data-float="note">
+              <span class="tag tag-note">Note</span>
+              <p>Tuesday: sync drops edits when both phones go offline</p>
+            </div>
+            <div class="float float-decision" data-float="decision">
+              <span class="tag tag-decision">Decision</span>
+              <p>Launch v1 solo</p>
+            </div>
+            <div class="float float-todo" data-float="todo">
+              <span class="tag tag-todo">Todo</span>
+              <p>Log sync errors for a week</p>
+            </div>
+          </div>
         </div>
-      </div>
+        <figcaption>A staged conversation about an invented project, drawn on this page. The screens further down are real.</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -468,6 +513,7 @@
           </div>
         </details>
       </div>
+      <a class="more" href="faq/">Every question, with the guides' own<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
     </div>
   </section>
 

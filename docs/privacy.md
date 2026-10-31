@@ -111,3 +111,21 @@ Claude Code and other MCP clients run Broski on your Mac; nothing goes over the 
 ## Reporting a problem
 
 Found a way to make Broski leak, act without asking, or read what it shouldn't? Report it privately: see [SECURITY.md](../SECURITY.md). The checklist for outside reviews is [SECURITY-REVIEW.md](SECURITY-REVIEW.md).
+
+## Common questions
+
+### Does Broski collect analytics or crash reports?
+
+No. Broski has no account, no server of its own, and sends no analytics or crash reports.
+
+### Is private mode the same as using a local model?
+
+No. Private mode changes what Broski reads and keeps, not where the reply comes from: your messages still go to your everyday model, so if that's a cloud model, it gets what you say. For text that must stay on your device, use a local model or a local-only project.
+
+### Does Broski hide API keys and passwords before sending text to a model?
+
+Yes. The gateway masks common API keys and tokens, private key blocks, and `.env`-style lines whose name ends in KEY, TOKEN, SECRET or PASSWORD before anything is sent. Images and PDFs sent as files go as they are.
+
+### What happens if I forget my vault passphrase?
+
+Your recovery key opens the vault instead; it's shown once and never stored. Lose both the passphrase and the recovery key and nobody can open it, including you.
