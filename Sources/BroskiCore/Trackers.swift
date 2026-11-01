@@ -38,6 +38,106 @@ public enum CoreSection: String, Codable, CaseIterable {
 /// Every project Broski knows, in one file at the notes root (`projects.json`): its real name, where its
 /// code lives, and which trackers it has. Trackers are read in place, read-only: the project's own
 /// tracker stays the source of truth.
+// MARK: Managing projects
+
+/// Settings › Projects › Your projects. Only projects.json changes: a project's notes and code are never moved or
+/// removed from here.
+extension ProjectRegistry {
+    /// A new project, its notes id made from its name ("Strado Sniper" → strado-sniper). A name, id or other name
+    /// already in use is refused.
+    @discardableResult
+    public mutating func add(name: String, about: String) throws -> Entry {
+        let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = ProjectProposal.slugify(title)
+        guard !id.isEmpty else { throw ProjectSetup.Failure.badName }
+        let taken = projects.flatMap { [$0.notes, $0.name] + $0.aliases }.map { ProjectProposal.slugify($0) }
+        guard !taken.contains(id) else { throw ProjectSetup.Failure.exists(id) }
+        let entry = Entry(name: title, notes: id, about: about.trimmingCharacters(in: .whitespacesAndNewlines))
+        projects.append(entry)
+        return entry
+    }
+
+    /// Adds a code folder to a project, and reads a tracker found there in place, read-only.
+    @discardableResult
+    public mutating func connect(folder: URL, to notes: String) throws -> ProjectSetup.Connection {
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
+            throw ProjectSetup.Failure.noFolder(folder.path)
+        }
+        let path = folder.standardizedFileURL.path
+        let source = TrackerSource(id: notes, name: notes, path: path, readOnly: true)
+        let shape = TrackerPresets.detect(source).adapter
+        let tracker = shape == "generic-markdown" ? nil : shape
+        var entry = entry(notes: notes) ?? Entry(name: notes, notes: notes)
+        if !entry.folders.contains(path) { entry.folders.append(path) }
+        if tracker != nil, !entry.trackers.contains(where: { $0.path == path }) { entry.trackers.append(source) }
+        if let index = projects.firstIndex(where: { $0.notes == notes }) {
+            projects[index] = entry
+        } else {
+            projects.append(entry)
+        }
+        return ProjectSetup.Connection(packs: Packs.suggest(forFolder: folder), tracker: tracker)
+    }
+
+    /// Takes a code folder off a project, with the tracker read from it.
+    public mutating func disconnect(folder: String, from notes: String) {
+        guard let index = projects.firstIndex(where: { $0.notes == notes }) else { return }
+        // "~/code/x" and "/Users/me/code/x" are the same folder; a tracker inside it goes too.
+        func plain(_ path: String) -> String { URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path }
+        let gone = plain(folder)
+        projects[index].folders.removeAll { plain($0) == gone }
+        projects[index].trackers.removeAll { plain($0.path) == gone || plain($0.path).hasPrefix(gone + "/") }
+    }
+
+    public enum EditProblem: Error, Equatable, LocalizedError {
+        /// projects.json is there but can't be read (iCloud hasn't downloaded it, a sync is half done, a hand edit).
+        case unreadable
+
+        public var errorDescription: String? {
+            "projects.json in your Broski folder can't be read right now, so nothing was changed. If iCloud is still downloading it, try again in a moment."
+        }
+    }
+
+    /// One change to projects.json, made on what's on disk now (so nothing written meanwhile is lost), and never
+    /// over a file that's there but can't be read.
+    public static func edit(at root: URL, _ change: (inout ProjectRegistry) throws -> Void) throws {
+        let file = root.appendingPathComponent(fileName)
+        var registry = ProjectRegistry()
+        if FileManager.default.fileExists(atPath: file.path) {
+            guard let data = try? Data(contentsOf: file), let read = try? JSONDecoder().decode(ProjectRegistry.self, from: data) else {
+                throw EditProblem.unreadable
+            }
+            registry = read
+        }
+        try change(&registry)
+        try registry.save(to: root)
+    }
+
+    /// A project's name, what it is and its other names. A name another project already uses is refused.
+    public mutating func update(notes: String, name: String, about: String, aliases: [String]) throws {
+        guard let index = projects.firstIndex(where: { $0.notes == notes }) else { return }
+        let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ProjectProposal.slugify(title).isEmpty else { throw ProjectSetup.Failure.badName }
+        let others = projects.filter { $0.notes != notes }.flatMap { [$0.notes, $0.name] + $0.aliases }.map { ProjectProposal.slugify($0) }
+        if let clash = ([title] + aliases).map({ ProjectProposal.slugify($0) }).first(where: others.contains) {
+            throw ProjectSetup.Failure.exists(clash)
+        }
+        projects[index].name = title
+        projects[index].about = about.trimmingCharacters(in: .whitespacesAndNewlines)
+        projects[index].aliases = aliases
+    }
+
+    /// Takes a project off Broski's list.
+    public mutating func remove(notes: String) {
+        projects.removeAll { $0.notes == notes }
+    }
+
+    /// "SAI, sai coach" → ["SAI", "sai coach"].
+    public static func aliases(from text: String) -> [String] {
+        text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+}
+
 public struct ProjectRegistry: Codable, Equatable {
     public struct Entry: Codable, Equatable, Identifiable {
         /// The name Broski shows ("ROOK", even if the folder is still called SAI).

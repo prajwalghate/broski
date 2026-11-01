@@ -163,10 +163,12 @@ struct BothDevicesTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let mac = ConversationStore(root: root, device: "mac")
         let phone = ConversationStore(root: root, device: "iphone")
-        try mac.append(Turn(device: "mac", speaker: .you, text: "Started on the Mac"))
+        // Times a second apart: turns made a moment apart can tie once stored, and then the order is up to the files.
+        let start = Date().addingTimeInterval(-60)
+        try mac.append(Turn(at: start, device: "mac", speaker: .you, text: "Started on the Mac"))
         let before = phone.fingerprint()
         #expect(phone.fingerprint() == before, "nothing new, nothing changes")
-        try phone.append(Turn(device: "iphone", speaker: .you, text: "Carried on from the phone"))
+        try phone.append(Turn(at: start.addingTimeInterval(1), device: "iphone", speaker: .you, text: "Carried on from the phone"))
         let after = mac.fingerprint()
         #expect(after != before)
         #expect(mac.recent(10).map(\.device) == ["mac", "iphone"])

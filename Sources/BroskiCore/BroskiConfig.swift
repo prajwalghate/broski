@@ -73,6 +73,8 @@ public struct BroskiConfig: Codable, Equatable {
     public var memoryPaused: Bool = false
     /// Projects whose brief stays in the folder but isn't read into a conversation.
     public var pausedBriefs: [String] = []
+    /// The conversation sends what you said as soon as you stop talking. Off: it waits in the box for you to check.
+    public var sendWhenSpoken: Bool = false
 
     /// The conversation opens on the main shortcut and fn.
     public var conversationFirst: Bool { frontDoor != "note" }
@@ -176,6 +178,7 @@ public struct BroskiConfig: Codable, Equatable {
         readLinks = (try? c.decodeIfPresent(Bool.self, forKey: .readLinks)) ?? d.readLinks
         memoryPaused = (try? c.decodeIfPresent(Bool.self, forKey: .memoryPaused)) ?? d.memoryPaused
         pausedBriefs = (try? c.decodeIfPresent([String].self, forKey: .pausedBriefs)) ?? d.pausedBriefs
+        sendWhenSpoken = (try? c.decodeIfPresent(Bool.self, forKey: .sendWhenSpoken)) ?? d.sendWhenSpoken
         if wakeWords.isEmpty { wakeWords = d.wakeWords }
         silenceSeconds = min(max(silenceSeconds, 0.8), 6)
     }

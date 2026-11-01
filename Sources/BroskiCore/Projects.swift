@@ -213,25 +213,10 @@ public enum ProjectSetup {
     /// read-only. Broski never writes to the repo.
     @discardableResult
     public static func connect(folder: URL, project: String, root: URL) throws -> Connection {
-        var isFolder: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
-            throw Failure.noFolder(folder.path)
-        }
-        let path = folder.standardizedFileURL.path
-        let source = TrackerSource(id: project, name: project, path: path, readOnly: true)
-        let shape = TrackerPresets.detect(source).adapter
-        let tracker = shape == "generic-markdown" ? nil : shape
         var registry = ProjectRegistry.load(from: root)
-        var entry = registry.entry(notes: project) ?? ProjectRegistry.Entry(name: project, notes: project)
-        if !entry.folders.contains(path) { entry.folders.append(path) }
-        if tracker != nil, !entry.trackers.contains(where: { $0.path == path }) { entry.trackers.append(source) }
-        if let index = registry.projects.firstIndex(where: { $0.notes == project }) {
-            registry.projects[index] = entry
-        } else {
-            registry.projects.append(entry)
-        }
+        let found = try registry.connect(folder: folder, to: project)
         try registry.save(to: root)
-        return Connection(packs: Packs.suggest(forFolder: folder), tracker: tracker)
+        return found
     }
 
     @discardableResult

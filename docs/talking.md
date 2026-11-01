@@ -15,6 +15,7 @@ Press ⌥⇧B on the Mac, or open the Talk tab on the iPhone. It's one conversat
 - **⌘K for everything.** Type a few letters to start a riff, go private, think harder, switch project, onboard a project, or open the dashboard, the vault or Settings. Arrows move, Return does it, Esc closes.
 - **It explains itself.** Ask "how do I…" about Broski and it answers from a short guide made from these pages. ⌘K › **How Broski works** gives the overview, and an empty conversation offers three things to try.
 - **Each project has a colour.** A small dot next to the project's name, the same in the conversation and the dashboard, on every device. The name is always there too.
+- **What you say waits for you.** Hold ⌥⇧B or fn, or click the mic, and when you stop, what you said goes in the message box to check or fix; Return sends it. Settings › General › "Send what I say as soon as I stop talking" sends it at once instead.
 - **Return sends.** Shift-, Option- or Control-Return adds a line. Up in an empty box brings back your last message. Esc stops listening, then stops a reply, then stops reading aloud. The Send button turns into Stop while Broski replies, and a failed reply gets **Try again**.
 
 ### Things you can say

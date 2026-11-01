@@ -78,11 +78,18 @@ started() {
   echo "${count:-0}"
 }
 
+# Right after a copy, Launch Services can refuse to open the app for a moment (error -600). Under set -e that used
+# to end the script before it checked the new version started, or put the old one back; so it tries a few times.
+open_broski() {
+  for _ in 1 2 3 4 5; do open "$DEST" 2>/dev/null && return 0; sleep 1; done
+  return 0
+}
+
 before="$(started "$NEW")"
 quit_broski
 rm -rf "$DEST"
 ditto "$NEW" "$DEST"
-open "$DEST"
+open_broski
 for _ in $(seq 1 60); do
   [[ "$(started "$NEW")" -gt "$before" ]] && break
   sleep 0.5
@@ -98,7 +105,7 @@ if [[ -n "$backup" ]]; then
   quit_broski
   rm -rf "$DEST"
   ditto "$backup" "$DEST"
-  open "$DEST"
+  open_broski
   fail "put the previous version back ($(basename "$backup" .app)). Check $log."
 fi
 fail "there was no previous version to put back. Check $log."

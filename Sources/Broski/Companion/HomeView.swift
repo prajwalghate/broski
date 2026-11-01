@@ -905,7 +905,8 @@ final class HomeModel: ObservableObject {
                 let text = await voice.stop(vocabulary: library.projectNames)
                 guard !text.isEmpty else { return }
                 draft = TextTools.joinPhrase(draft, text)
-                send()
+                // What you said waits in the box for you to check and send, unless you asked for it to go at once.
+                if config().sendWhenSpoken { send() } else { composerFocus += 1 }
             }
         } else {
             speaker.stop()
@@ -921,7 +922,7 @@ final class HomeModel: ObservableObject {
         stopSpeaking()
     }
 
-    /// fn held: start listening; let go: send what was said.
+    /// fn held: start listening; let go: what was said goes in the box (or is sent, if you chose that).
     func holdStart() {
         guard !voice.listening else { return }
         speaker.stop()

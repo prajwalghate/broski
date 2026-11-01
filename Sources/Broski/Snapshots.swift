@@ -331,6 +331,11 @@ enum Snapshots {
         render(StartFreshSheet(app: app, shown: .constant(true)), size: NSSize(width: 460, height: 470), to: folder, "settings-start-fresh-sheet")
         render(Form { BriefsSection(app: app) }.formStyle(.grouped).frame(width: 640, height: 300), size: NSSize(width: 640, height: 300),
                to: folder, "settings-briefs")
+        render(Form { YourProjectsSection(app: app, library: app.library) }.formStyle(.grouped).frame(width: 640, height: 360),
+               size: NSSize(width: 640, height: 360), to: folder, "settings-your-projects")
+        if let entry = app.library.registry.projects.first {
+            render(ProjectEditor(library: app.library, original: entry), size: NSSize(width: 520, height: 520), to: folder, "settings-project-editor")
+        }
         render(ModelsSettings(app: app).frame(width: 640, height: 1180), size: NSSize(width: 640, height: 1180), to: folder, "settings-models-filled")
         // The website's picture of Settings › Models (site/assets/screens).
         render(ModelsSettings(app: app).frame(width: 640, height: 700), size: NSSize(width: 640, height: 700), to: folder, "settings-models-site")

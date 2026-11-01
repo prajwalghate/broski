@@ -120,6 +120,12 @@ private struct GeneralSettings: View {
                     Text(app.shortcutProblem ?? "Tap to open a note and type. Hold it down to talk; let go when you're done.")
                         .foregroundStyle(app.shortcutProblem == nil ? Color.secondary : Color.red)
                 }
+                Toggle(isOn: app.binding(\.sendWhenSpoken)) {
+                    Text("Send what I say as soon as I stop talking")
+                    Text(app.config.sendWhenSpoken
+                         ? "In the conversation, what you say goes to Broski when you let go or stop the mic."
+                         : "Off: what you say waits in the message box, so you can check or fix it, then press Return.")
+                }
                 Toggle(isOn: app.binding(\.wakeWordEnabled)) {
                     Text("Wake word “\(app.config.wakeWords.first ?? "broski")”")
                     Text("Hands-free, but the microphone stays on: the orange mic dot stays lit and it uses more battery. Listening runs on this Mac only.")
@@ -263,6 +269,183 @@ struct StartFreshSection: View {
             Text("The Broski folder in use now is archived first, so nothing is lost. Broski restarts.")
         }
         .sheet(isPresented: $startingFresh) { StartFreshSheet(app: app, shown: $startingFresh) }
+    }
+}
+
+/// Settings › Projects › Your projects: each project's name, what it is and its code folders, to add, edit or
+/// remove. Only Broski's list (projects.json) changes; notes and code stay where they are.
+struct YourProjectsSection: View {
+    @ObservedObject var app: AppModel
+    @ObservedObject var library: Library
+    @State private var editing: ProjectRegistry.Entry?
+    @State private var adding = false
+    @State private var removing: ProjectRegistry.Entry?
+    @State private var problem: String?
+
+    var body: some View {
+        Section {
+            if library.registry.projects.isEmpty {
+                Text("No projects yet. Add one, or describe a new one in the conversation.").foregroundStyle(.secondary)
+            }
+            ForEach(library.registry.projects) { entry in
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        Button("Edit…") { editing = entry }
+                            .accessibilityLabel("Edit \(entry.name)")
+                        Button("Remove…") { removing = entry }
+                            .accessibilityLabel("Remove \(entry.name)")
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        ProjectDot(project: entry.notes, size: 8)
+                        Text(entry.name)
+                    }
+                    Text(Self.summary(entry))
+                }
+            }
+            Button("Add project…") { adding = true }
+            if let problem { Text(problem).foregroundStyle(.orange) }
+        } header: {
+            Text("Your projects")
+        } footer: {
+            Text("Each project can span several code folders. A tracker found in one is read where it is, read-only. Removing a project only takes it off this list: its notes and its code stay where they are.")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sheet(item: $editing) { entry in ProjectEditor(library: library, original: entry) }
+        .sheet(isPresented: $adding) { ProjectEditor(library: library, original: nil) }
+        .confirmationDialog("Remove \(removing?.name ?? "") from Broski?",
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+            Button("Remove from the list") {
+                guard let removing else { return }
+                do {
+                    try ProjectRegistry.edit(at: library.store.root) { $0.remove(notes: removing.notes) }
+                    problem = nil
+                    library.loadRegistry()
+                    library.reload()
+                } catch {
+                    problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
+            }
+        } message: {
+            Text("Its notes stay in projects/\(removing?.notes ?? "") and its code isn't touched. Add it again any time.")
+        }
+    }
+
+    /// "One line on what it is · 3 folders · tracker".
+    static func summary(_ entry: ProjectRegistry.Entry) -> String {
+        var parts: [String] = []
+        if !entry.about.isEmpty { parts.append(entry.about) }
+        parts.append(entry.folders.isEmpty ? "No code folder" : entry.folders.count == 1 ? "1 folder" : "\(entry.folders.count) folders")
+        if !entry.trackers.isEmpty { parts.append(entry.trackers.count == 1 ? "tracker" : "\(entry.trackers.count) trackers") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Adding or editing one project: its name, what it is, other names, and its code folders. It keeps only its own
+/// changes, and Save applies them to projects.json as it is on disk then, so nothing written meanwhile is lost.
+struct ProjectEditor: View {
+    @ObservedObject var library: Library
+    let original: ProjectRegistry.Entry?
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var about = ""
+    @State private var aliases = ""
+    @State private var kept: [String] = []
+    @State private var removed: [String] = []
+    @State private var added: [URL] = []
+    @State private var problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(original == nil ? "Add a project" : "Edit \(original?.name ?? "")").font(.title3.weight(.semibold))
+            Form {
+                TextField("Name", text: $name)
+                TextField("What it is", text: $about, prompt: Text("One line, like “Copy-trading on Hyperliquid”"))
+                TextField("Other names", text: $aliases, prompt: Text("Comma-separated, like “SAI, sai coach”"))
+                Section("Code folders") {
+                    if kept.isEmpty && added.isEmpty {
+                        Text("None yet.").foregroundStyle(.secondary)
+                    }
+                    ForEach(kept, id: \.self) { folder in
+                        row(folder, tracker: original?.trackers.contains { $0.path == folder || $0.path.hasPrefix(folder + "/") } ?? false) {
+                            kept.removeAll { $0 == folder }
+                            removed.append(folder)
+                        }
+                    }
+                    ForEach(added, id: \.self) { url in
+                        row(url.path, tracker: Self.hasTracker(url)) { added.removeAll { $0 == url } }
+                    }
+                    Button("Add folder…") { addFolder() }
+                }
+            }
+            .formStyle(.grouped)
+            if let problem { Text(problem).font(.system(size: 12)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(original == nil ? "Add project" : "Save") { save() }
+                    .buttonStyle(.borderedProminent).tint(Brand.purple)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .help(name.trimmingCharacters(in: .whitespaces).isEmpty ? "Give the project a name" : "Save to projects.json")
+            }
+        }
+        .padding(20)
+        .frame(width: 520, height: 520)
+        .onAppear {
+            guard let original else { return }
+            name = original.name
+            about = original.about
+            aliases = original.aliases.joined(separator: ", ")
+            kept = original.folders
+        }
+    }
+
+    private func row(_ folder: String, tracker: Bool, remove: @escaping () -> Void) -> some View {
+        HStack {
+            Text((folder as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle)
+            if tracker { Text("tracker").font(.caption).foregroundStyle(.secondary) }
+            Spacer()
+            Button(action: remove) { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless)
+                .help("Take this folder off the project")
+                .accessibilityLabel("Take \((folder as NSString).lastPathComponent) off the project")
+        }
+    }
+
+    /// Whether Broski would read a tracker in this folder.
+    static func hasTracker(_ url: URL) -> Bool {
+        var probe = ProjectRegistry()
+        return (try? probe.connect(folder: url, to: "probe"))?.tracker != nil
+    }
+
+    private func addFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add"
+        panel.message = "Choose the project's code folders. Broski only reads them."
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls where !added.contains(url) && !kept.contains(url.standardizedFileURL.path) { added.append(url) }
+    }
+
+    private func save() {
+        let aliasList = ProjectRegistry.aliases(from: aliases)
+        do {
+            try ProjectRegistry.edit(at: library.store.root) { registry in
+                let id = try original?.notes ?? registry.add(name: name, about: about).notes
+                try registry.update(notes: id, name: name, about: about, aliases: aliasList)
+                for folder in removed { registry.disconnect(folder: folder, from: id) }
+                for url in added { try registry.connect(folder: url, to: id) }
+            }
+            library.loadRegistry()
+            library.reload()
+            dismiss()
+        } catch {
+            // The sheet stays, with what you typed, so you can fix it and save again.
+            problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
     }
 }
 
@@ -441,6 +624,7 @@ private struct ProjectSettings: View {
             } footer: {
                 Text("Each folder inside these becomes a project you can name: “in the <folder> project, …”. \(library.projects.filter { $0.folder != nil }.count) found.")
             }
+            YourProjectsSection(app: app, library: library)
             BriefsSection(app: app)
             Section("Notes") {
                 LabeledContent("Saved in") {

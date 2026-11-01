@@ -70,7 +70,7 @@ Settings › About › **Show welcome again** runs the welcome a second time.
 | Shortcut | What it does |
 |---|---|
 | ⌥⇧B | Opens the conversation |
-| Hold fn | Talk into the conversation; let go to send. Off until you turn it on in Settings › General. Needs Accessibility. |
+| Hold fn | Talk into the conversation; let go and what you said waits in the message box to check, then Return sends it (Settings › General can send it at once). Off until you turn it on in Settings › General. Needs Accessibility. |
 | ⌥⇧N | A quick note: tap to type, hold to talk |
 | ⌥⇧S | A screenshot note: grab part of the screen, then say or type what it's about |
 | ⌥⇧C | Clips the text you've highlighted in any app, with where it came from |
@@ -112,7 +112,7 @@ On the iPhone, Bark needs iOS 18; see [The iPhone app](iphone.md).
 
 To share notes with the iPhone app, Settings › General › **Sync with iPhone** moves `~/Broski` into iCloud Drive › Broski (`~/Library/Mobile Documents/com~apple~CloudDocs/Broski`). Nothing is deleted.
 
-**Project folders** are where your code lives. Add them in Settings › Projects. Each folder inside becomes a project you can name, and Broski only reads them.
+**Project folders** are where your code lives. Add them in Settings › Projects. Each folder inside becomes a project you can name, and Broski only reads them. Settings › Projects › Your projects lists each project to add, edit (its name, what it is, other names and code folders, which can be several) or remove; a tracker in a code folder is read in place, read-only, and removing a project leaves its notes and code where they are.
 
 **App data** stays on this Mac in `~/Library/Application Support/Broski`: your keys (`secrets.json`), the voice models, and earlier versions kept by `scripts/install-mac.sh`.
 

@@ -2,6 +2,20 @@
 
 All notable changes to Broski are in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Mac app and the iPhone app have their own version numbers; each entry names the ones that changed. The iPhone stayed at 0.6.0 while Mac 0.9.1 to 0.9.6 shipped, so iPhone changes in those releases are listed under the Mac version.
 
+## Mac 0.14.0 - 2026-11-01
+
+### Added
+
+- Settings › Projects › Your projects: add, edit (name, what it is, other names, code folders) or remove a project. A tracker in a code folder is read in place, read-only; removing a project leaves its notes and code where they are.
+
+### Changed
+
+- What you say in the conversation now waits in the message box for you to check, and Return sends it. Settings › General › "Send what I say as soon as I stop talking" brings back sending at once.
+
+### Fixed
+
+- After Start fresh, Broski always restarts in the new folder (closing the sheet could swallow the restart), and the event is logged there.
+
 ## Mac 0.13.0, iPhone 0.8.0 - 2026-11-01
 
 ### Added
