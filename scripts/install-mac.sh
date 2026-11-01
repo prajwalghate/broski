@@ -16,7 +16,8 @@ DEST=/Applications/Broski.app
 KEEP="$HOME/Library/Application Support/Broski/Previous"
 plist() { /usr/libexec/PlistBuddy -c "Print $2" "$1/Contents/Info.plist" 2>/dev/null || true; }
 fail() { printf 'Not installed: %s\n' "$*" >&2; exit 1; }
-gui_pids() { pgrep -f '/Broski\.app/Contents/MacOS/Broski$' || true; }
+# Every running copy: the installed one, a build, or a kept Broski-<version>.app that Spotlight opened.
+gui_pids() { pgrep -f '/Broski[^/]*\.app/Contents/MacOS/Broski$' || true; }
 
 [[ -d "$NEW" ]] || fail "there's no $NEW. Run scripts/build-app.sh first."
 new_version="$(plist "$NEW" CFBundleShortVersionString) ($(plist "$NEW" CFBundleVersion))"

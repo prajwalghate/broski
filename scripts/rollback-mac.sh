@@ -8,7 +8,8 @@ set -euo pipefail
 DEST=/Applications/Broski.app
 KEEP="$HOME/Library/Application Support/Broski/Previous"
 plist() { /usr/libexec/PlistBuddy -c "Print $2" "$1/Contents/Info.plist" 2>/dev/null || true; }
-gui_pids() { pgrep -f '/Broski\.app/Contents/MacOS/Broski$' || true; }
+# Every running copy: the installed one, a build, or a kept Broski-<version>.app that Spotlight opened.
+gui_pids() { pgrep -f '/Broski[^/]*\.app/Contents/MacOS/Broski$' || true; }
 
 if [[ "${1:-}" == "--list" ]]; then
   ls -1t "$KEEP" 2>/dev/null | sed 's/\.app$//' || true

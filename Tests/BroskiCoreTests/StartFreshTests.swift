@@ -69,8 +69,9 @@ struct StartFreshTests {
         defer { try? FileManager.default.removeItem(at: parent) }
         try write("Calls me Sam. Building a recipe app.", "memory/about-you.md", in: root)
         try write("a note", "projects/recipe-box/2026-10-30-0900-a-note.md", in: root)
-        try Memory.remember("Prefers short answers", root: root, device: "mac")
-        try Memory.remember("Works late on Fridays", root: root, device: "iphone")
+        // Remembered the day before, so the order doesn't depend on when the test runs.
+        try Memory.remember("Prefers short answers", root: root, device: "mac", at: day.addingTimeInterval(-86_400))
+        try Memory.remember("Works late on Fridays", root: root, device: "iphone", at: day.addingTimeInterval(-86_400))
 
         let forgotten = try StartFresh.forgetMe(root: root, device: "mac", at: day)
         #expect(forgotten == 3, "two remembered facts and the about-you page")

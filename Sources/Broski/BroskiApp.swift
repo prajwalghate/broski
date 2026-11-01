@@ -53,6 +53,8 @@ enum BroskiApp {
             _exit(0)
         }
 
+        oneAtATime()
+
         // Tooltips after 0.4 s instead of macOS's 1.5 s, so hovering an icon says what it does (Broski only).
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 400])
         let app = NSApplication.shared
@@ -60,5 +62,45 @@ enum BroskiApp {
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
         withExtendedLifetime(delegate) { app.run() }
+    }
+
+    /// One Broski at a time (see SingleInstance): a second copy shows the running one and exits, and the installed
+    /// copy replaces a build or a kept copy that Spotlight opened first.
+    @MainActor
+    private static func oneAtATime() {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: id)
+        let running = others.map {
+            SingleInstance.Running(pid: $0.processIdentifier, path: $0.bundleURL?.standardizedFileURL.path ?? "", terminated: $0.isTerminated)
+        }
+        let decision = SingleInstance.decide(running, me: ProcessInfo.processInfo.processIdentifier, installed: "/Applications/Broski.app")
+        func other(_ pid: Int32) -> NSRunningApplication? { others.first { $0.processIdentifier == pid } }
+        func alive(_ pid: Int32) -> Bool { kill(pid, 0) == 0 }
+        Log.fileURL = AppModel.notesRoot.appendingPathComponent(".broski/broski.log")
+        switch decision {
+        case .run:
+            return
+        case .replace(let pid):
+            guard let app = other(pid) else { return }
+            Log.info("Quitting the Broski running from \(app.bundleURL?.path ?? "another copy") so the installed one runs")
+            app.terminate()
+            // A copy keeping a note as a draft takes up to 6 s to quit.
+            let deadline = Date().addingTimeInterval(10)
+            while alive(pid), Date() < deadline { usleep(200_000) }
+            if alive(pid) { app.forceTerminate() }
+        case .handOver(let pid):
+            guard let app = other(pid) else { return }
+            Log.info("Broski is already running from \(app.bundleURL?.path ?? "another copy"); showing that one instead of starting \(Bundle.main.bundlePath)")
+            if let url = app.bundleURL {
+                // Opening the running copy asks it to reopen, which shows its dashboard.
+                let done = DispatchSemaphore(value: 0)
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in done.signal() }
+                _ = done.wait(timeout: .now() + 3)
+            }
+            // It was quitting after all: start, so clicking Broski never leaves nothing running.
+            guard alive(pid) else { return }
+            Log.flush()
+            _exit(0)
+        }
     }
 }

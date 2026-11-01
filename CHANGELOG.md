@@ -2,6 +2,12 @@
 
 All notable changes to Broski are in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Mac app and the iPhone app have their own version numbers; each entry names the ones that changed. The iPhone stayed at 0.6.0 while Mac 0.9.1 to 0.9.6 shipped, so iPhone changes in those releases are listed under the Mac version.
 
+## Mac 0.14.1 - 2026-11-01
+
+### Fixed
+
+- Opening Broski while it's already running (for example from Spotlight, which can find another copy) shows the one that's running instead of starting a second, so there's never two menu-bar icons, two mics or two sets of shortcuts.
+
 ## Mac 0.14.0 - 2026-11-01
 
 ### Added
